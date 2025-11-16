@@ -16,8 +16,11 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:security": "vitest run tests/security",
-    "lint": "eslint src --ext ts",
-    "format": "prettier --write 'src/**/*.ts'",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "format": "biome format --write src",
+    "check": "biome check src",
+    "check:fix": "biome check --write src",
     "worker:dev": "npx wrangler dev",
     "benchmark": "tsx benchmarks/github-comparison.ts",
     "test:mcp": "tsx scripts/test-mcp-directly.ts"
@@ -43,6 +46,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.5",
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^1.6.1",
     "tsx": "^4.7.0",

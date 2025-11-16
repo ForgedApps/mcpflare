@@ -1,30 +1,30 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { homedir } from 'os';
-import { parse as parseJSONC } from 'jsonc-parser';
-import { MCPConfig } from '../types/mcp.js';
-import logger from './logger.js';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { parse as parseJSONC } from 'jsonc-parser'
+import type { MCPConfig } from '../types/mcp.js'
+import logger from './logger.js'
 
 /**
  * Standard MCP configuration file format (matches Cursor/Claude Desktop format)
  */
 export interface MCPServersConfig {
-  mcpServers: Record<string, MCPConfig>;
+  mcpServers: Record<string, MCPConfig>
 }
 
 /**
  * IDE configuration definition
  */
 interface IDEDefinition {
-  id: 'claude-code' | 'cursor' | 'github-copilot';
-  displayName: string;
-  priority: number; // Lower number = higher priority
+  id: 'claude-code' | 'cursor' | 'github-copilot'
+  displayName: string
+  priority: number // Lower number = higher priority
   paths: {
-    windows: string[];
-    macos: string[];
-    linux: string[];
-    default: string; // Default path to create if none exists
-  };
+    windows: string[]
+    macos: string[]
+    linux: string[]
+    default: string // Default path to create if none exists
+  }
 }
 
 /**
@@ -34,8 +34,9 @@ interface IDEDefinition {
  * Resolves environment variables from .env file
  */
 export class ConfigManager {
-  private configPath: string | null = null;
-  private configSource: 'cursor' | 'claude-code' | 'github-copilot' | null = null;
+  private configPath: string | null = null
+  private configSource: 'cursor' | 'claude-code' | 'github-copilot' | null =
+    null
 
   // IDE definitions - ordered by priority (lower = higher priority)
   private readonly ideDefinitions: IDEDefinition[] = [
@@ -47,20 +48,66 @@ export class ConfigManager {
         windows: [
           join(homedir(), '.claude', 'mcp.json'),
           join(homedir(), '.claude', 'mcp.jsonc'),
-          join(homedir(), 'AppData', 'Roaming', 'Claude Code', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), 'AppData', 'Roaming', 'Claude Code', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         macos: [
           join(homedir(), '.claude', 'mcp.json'),
           join(homedir(), '.claude', 'mcp.jsonc'),
-          join(homedir(), 'Library', 'Application Support', 'Claude Code', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), 'Library', 'Application Support', 'Claude Code', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         linux: [
           join(homedir(), '.claude', 'mcp.json'),
           join(homedir(), '.claude', 'mcp.jsonc'),
-          join(homedir(), '.config', 'Claude Code', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), '.config', 'Claude Code', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            '.config',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            '.config',
+            'Claude Code',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         default: join(homedir(), '.claude', 'mcp.jsonc'),
       },
@@ -73,24 +120,88 @@ export class ConfigManager {
         windows: [
           join(homedir(), '.github', 'copilot', 'mcp.json'),
           join(homedir(), '.github', 'copilot', 'mcp.jsonc'),
-          join(homedir(), 'AppData', 'Roaming', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.json'),
-          join(homedir(), 'AppData', 'Roaming', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.jsonc',
+          ),
           join(homedir(), 'AppData', 'Roaming', 'GitHub Copilot', 'mcp.json'),
           join(homedir(), 'AppData', 'Roaming', 'GitHub Copilot', 'mcp.jsonc'),
         ],
         macos: [
           join(homedir(), '.github', 'copilot', 'mcp.json'),
           join(homedir(), '.github', 'copilot', 'mcp.jsonc'),
-          join(homedir(), 'Library', 'Application Support', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.json'),
-          join(homedir(), 'Library', 'Application Support', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.jsonc'),
-          join(homedir(), 'Library', 'Application Support', 'GitHub Copilot', 'mcp.json'),
-          join(homedir(), 'Library', 'Application Support', 'GitHub Copilot', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.jsonc',
+          ),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'GitHub Copilot',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'GitHub Copilot',
+            'mcp.jsonc',
+          ),
         ],
         linux: [
           join(homedir(), '.github', 'copilot', 'mcp.json'),
           join(homedir(), '.github', 'copilot', 'mcp.jsonc'),
-          join(homedir(), '.config', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.json'),
-          join(homedir(), '.config', 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.jsonc'),
+          join(
+            homedir(),
+            '.config',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            '.config',
+            'Code',
+            'User',
+            'globalStorage',
+            'github.copilot',
+            'mcp.jsonc',
+          ),
           join(homedir(), '.config', 'GitHub Copilot', 'mcp.json'),
           join(homedir(), '.config', 'GitHub Copilot', 'mcp.jsonc'),
         ],
@@ -105,44 +216,90 @@ export class ConfigManager {
         windows: [
           join(homedir(), '.cursor', 'mcp.json'),
           join(homedir(), '.cursor', 'mcp.jsonc'),
-          join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'AppData',
+            'Roaming',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         macos: [
           join(homedir(), '.cursor', 'mcp.json'),
           join(homedir(), '.cursor', 'mcp.jsonc'),
-          join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            'Library',
+            'Application Support',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         linux: [
           join(homedir(), '.cursor', 'mcp.json'),
           join(homedir(), '.cursor', 'mcp.jsonc'),
-          join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'mcp.json'),
-          join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'mcp.jsonc'),
+          join(
+            homedir(),
+            '.config',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.json',
+          ),
+          join(
+            homedir(),
+            '.config',
+            'Cursor',
+            'User',
+            'globalStorage',
+            'mcp.jsonc',
+          ),
         ],
         default: join(homedir(), '.cursor', 'mcp.jsonc'),
       },
     },
-  ];
+  ]
 
   constructor() {
     // Find config file in standard locations (checks IDEs in priority order)
-    const result = this.findConfigFile();
-    this.configPath = result.path;
-    this.configSource = result.source;
+    const result = this.findConfigFile()
+    this.configPath = result.path
+    this.configSource = result.source
   }
 
   /**
    * Get platform-specific paths for an IDE
    */
   private getPlatformPaths(ide: IDEDefinition): string[] {
-    const platform = process.platform;
+    const platform = process.platform
     if (platform === 'win32') {
-      return ide.paths.windows;
+      return ide.paths.windows
     } else if (platform === 'darwin') {
-      return ide.paths.macos;
+      return ide.paths.macos
     } else {
-      return ide.paths.linux;
+      return ide.paths.linux
     }
   }
 
@@ -150,22 +307,32 @@ export class ConfigManager {
    * Find MCP configuration file in standard locations
    * Checks IDEs in priority order (lower priority number = checked first)
    */
-  private findConfigFile(): { path: string | null; source: 'cursor' | 'claude-code' | 'github-copilot' | null } {
+  private findConfigFile(): {
+    path: string | null
+    source: 'cursor' | 'claude-code' | 'github-copilot' | null
+  } {
     // Sort by priority (lower number = higher priority)
-    const sortedIDEs = [...this.ideDefinitions].sort((a, b) => a.priority - b.priority);
+    const sortedIDEs = [...this.ideDefinitions].sort(
+      (a, b) => a.priority - b.priority,
+    )
 
     for (const ide of sortedIDEs) {
-      const paths = this.getPlatformPaths(ide);
+      const paths = this.getPlatformPaths(ide)
       for (const path of paths) {
         if (existsSync(path)) {
-          logger.info({ path, ide: ide.id }, `Found ${ide.displayName} MCP config file`);
-          return { path, source: ide.id };
+          logger.info(
+            { path, ide: ide.id },
+            `Found ${ide.displayName} MCP config file`,
+          )
+          return { path, source: ide.id }
         }
       }
     }
 
-    logger.warn('MCP config file not found in standard locations for any supported IDE');
-    return { path: null, source: null };
+    logger.warn(
+      'MCP config file not found in standard locations for any supported IDE',
+    )
+    return { path: null, source: null }
   }
 
   /**
@@ -174,13 +341,16 @@ export class ConfigManager {
    */
   private resolveEnvVars(value: string): string {
     return value.replace(/\$\{([^}]+)\}/g, (match, varName) => {
-      const envValue = process.env[varName];
+      const envValue = process.env[varName]
       if (envValue === undefined) {
-        logger.warn({ varName }, `Environment variable ${varName} not found, keeping placeholder`);
-        return match; // Keep original if not found
+        logger.warn(
+          { varName },
+          `Environment variable ${varName} not found, keeping placeholder`,
+        )
+        return match // Keep original if not found
       }
-      return envValue;
-    });
+      return envValue
+    })
   }
 
   /**
@@ -189,22 +359,22 @@ export class ConfigManager {
    */
   resolveEnvVarsInObject(obj: any): any {
     if (typeof obj === 'string') {
-      return this.resolveEnvVars(obj);
+      return this.resolveEnvVars(obj)
     }
-    
+
     if (Array.isArray(obj)) {
-      return obj.map(item => this.resolveEnvVarsInObject(item));
+      return obj.map((item) => this.resolveEnvVarsInObject(item))
     }
-    
+
     if (obj && typeof obj === 'object') {
-      const resolved: any = {};
+      const resolved: any = {}
       for (const [key, value] of Object.entries(obj)) {
-        resolved[key] = this.resolveEnvVarsInObject(value);
+        resolved[key] = this.resolveEnvVarsInObject(value)
       }
-      return resolved;
+      return resolved
     }
-    
-    return obj;
+
+    return obj
   }
 
   /**
@@ -212,27 +382,27 @@ export class ConfigManager {
    */
   private readConfigFile(filePath: string): MCPServersConfig | null {
     if (!existsSync(filePath)) {
-      return null;
+      return null
     }
 
     try {
-      const content = readFileSync(filePath, 'utf-8');
-      const config = parseJSONC(content) as MCPServersConfig;
-      
+      const content = readFileSync(filePath, 'utf-8')
+      const config = parseJSONC(content) as MCPServersConfig
+
       if (!config || typeof config !== 'object') {
-        logger.warn({ filePath }, 'Invalid config file format');
-        return null;
+        logger.warn({ filePath }, 'Invalid config file format')
+        return null
       }
 
       // Ensure mcpServers exists
       if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-        config.mcpServers = {};
+        config.mcpServers = {}
       }
 
-      return config;
+      return config
     } catch (error: any) {
-      logger.error({ error, filePath }, 'Failed to read config file');
-      return null;
+      logger.error({ error, filePath }, 'Failed to read config file')
+      return null
     }
   }
 
@@ -242,54 +412,60 @@ export class ConfigManager {
   private writeConfigFile(filePath: string, config: MCPServersConfig): void {
     try {
       // Ensure directory exists
-      const dir = dirname(filePath);
+      const dir = dirname(filePath)
       if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+        mkdirSync(dir, { recursive: true })
       }
 
       // Format as JSON with comments preserved (JSONC)
-      const content = JSON.stringify(config, null, 2);
-      writeFileSync(filePath, content, 'utf-8');
-      
+      const content = JSON.stringify(config, null, 2)
+      writeFileSync(filePath, content, 'utf-8')
+
       // Logging is handled by the caller (saveConfig, deleteConfig, etc.)
     } catch (error: any) {
-      logger.error({ error, filePath }, 'Failed to write config file');
-      throw error;
+      logger.error({ error, filePath }, 'Failed to write config file')
+      throw error
     }
   }
 
   /**
    * Get all saved MCP configurations from the detected config file
    */
-  getSavedConfigs(): Record<string, { config: MCPConfig; source: 'cursor' | 'claude-code' | 'github-copilot' }> {
-    const configs: Record<string, { config: MCPConfig; source: 'cursor' | 'claude-code' | 'github-copilot' }> = {};
+  getSavedConfigs(): Record<
+    string,
+    { config: MCPConfig; source: 'cursor' | 'claude-code' | 'github-copilot' }
+  > {
+    const configs: Record<
+      string,
+      { config: MCPConfig; source: 'cursor' | 'claude-code' | 'github-copilot' }
+    > = {}
 
     if (!this.configPath || !this.configSource) {
-      return configs;
+      return configs
     }
 
-    const fileConfig = this.readConfigFile(this.configPath);
+    const fileConfig = this.readConfigFile(this.configPath)
     if (fileConfig) {
       for (const [name, config] of Object.entries(fileConfig.mcpServers)) {
-        configs[name] = { config, source: this.configSource };
+        configs[name] = { config, source: this.configSource }
       }
     }
 
-    return configs;
+    return configs
   }
 
   /**
    * Get a saved MCP configuration by name
    */
   getSavedConfig(mcpName: string): MCPConfig | null {
-    const saved = this.getSavedConfigs();
-    const entry = saved[mcpName];
+    const saved = this.getSavedConfigs()
+    const entry = saved[mcpName]
     if (!entry) {
-      return null;
+      return null
     }
 
     // Resolve environment variables before returning
-    return this.resolveEnvVarsInObject(entry.config) as MCPConfig;
+    return this.resolveEnvVarsInObject(entry.config) as MCPConfig
   }
 
   /**
@@ -301,39 +477,46 @@ export class ConfigManager {
     if (!this.configPath) {
       // If no config exists, try to detect which IDE to use
       // Check IDEs in priority order
-      const sortedIDEs = [...this.ideDefinitions].sort((a, b) => a.priority - b.priority);
-      
-      let foundIDE: IDEDefinition | null = null;
+      const sortedIDEs = [...this.ideDefinitions].sort(
+        (a, b) => a.priority - b.priority,
+      )
+
+      let foundIDE: IDEDefinition | null = null
       for (const ide of sortedIDEs) {
         // Check if any of the IDE's default directory exists
-        const defaultDir = dirname(ide.paths.default);
+        const defaultDir = dirname(ide.paths.default)
         if (existsSync(defaultDir)) {
-          foundIDE = ide;
-          break;
+          foundIDE = ide
+          break
         }
       }
-      
+
       // Use highest priority IDE if found, otherwise default to Claude Code
-      const ideToUse = foundIDE || sortedIDEs[0];
-      const defaultPath = ideToUse.paths.default;
-      const dir = dirname(defaultPath);
+      const ideToUse = foundIDE || sortedIDEs[0]
+      const defaultPath = ideToUse.paths.default
+      const dir = dirname(defaultPath)
       if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+        mkdirSync(dir, { recursive: true })
       }
-      this.configPath = defaultPath;
-      this.configSource = ideToUse.id;
+      this.configPath = defaultPath
+      this.configSource = ideToUse.id
     }
 
-    const existingConfig = this.readConfigFile(this.configPath) || { mcpServers: {} };
+    const existingConfig = this.readConfigFile(this.configPath) || {
+      mcpServers: {},
+    }
 
     // Store config with environment variable placeholders (don't resolve when saving)
-    existingConfig.mcpServers[mcpName] = config;
-    
-    this.writeConfigFile(this.configPath, existingConfig);
-    
-    const ide = this.ideDefinitions.find(d => d.id === this.configSource);
-    const sourceName = ide ? ide.displayName : 'IDE';
-    logger.info({ mcpName, configPath: this.configPath, source: this.configSource }, `MCP config saved to ${sourceName} config file`);
+    existingConfig.mcpServers[mcpName] = config
+
+    this.writeConfigFile(this.configPath, existingConfig)
+
+    const ide = this.ideDefinitions.find((d) => d.id === this.configSource)
+    const sourceName = ide ? ide.displayName : 'IDE'
+    logger.info(
+      { mcpName, configPath: this.configPath, source: this.configSource },
+      `MCP config saved to ${sourceName} config file`,
+    )
   }
 
   /**
@@ -342,22 +525,25 @@ export class ConfigManager {
    */
   deleteConfig(mcpName: string): boolean {
     if (!this.configPath) {
-      return false;
+      return false
     }
 
-    const existingConfig = this.readConfigFile(this.configPath);
-    
+    const existingConfig = this.readConfigFile(this.configPath)
+
     if (!existingConfig || !existingConfig.mcpServers[mcpName]) {
-      return false;
+      return false
     }
 
-    delete existingConfig.mcpServers[mcpName];
-    this.writeConfigFile(this.configPath, existingConfig);
-    
-    const ide = this.ideDefinitions.find(d => d.id === this.configSource);
-    const sourceName = ide ? ide.displayName : 'IDE';
-    logger.info({ mcpName, configPath: this.configPath, source: this.configSource }, `MCP config deleted from ${sourceName} config file`);
-    return true;
+    delete existingConfig.mcpServers[mcpName]
+    this.writeConfigFile(this.configPath, existingConfig)
+
+    const ide = this.ideDefinitions.find((d) => d.id === this.configSource)
+    const sourceName = ide ? ide.displayName : 'IDE'
+    logger.info(
+      { mcpName, configPath: this.configPath, source: this.configSource },
+      `MCP config deleted from ${sourceName} config file`,
+    )
+    return true
   }
 
   /**
@@ -365,65 +551,82 @@ export class ConfigManager {
    * This reloads the config file location in case it was created or moved
    */
   importConfigs(configPath?: string): { imported: number; errors: string[] } {
-    const errors: string[] = [];
-    let imported = 0;
+    const errors: string[] = []
+    let imported = 0
 
     // If a specific path is provided, use it
     if (configPath) {
       if (existsSync(configPath)) {
-        this.configPath = configPath;
+        this.configPath = configPath
         // Try to detect source from path
-        const detectedIDE = this.ideDefinitions.find(ide => 
-          configPath.toLowerCase().includes(ide.id.replace('-', '')) ||
-          configPath.toLowerCase().includes(ide.displayName.toLowerCase().replace(/\s+/g, ''))
-        );
+        const detectedIDE = this.ideDefinitions.find(
+          (ide) =>
+            configPath.toLowerCase().includes(ide.id.replace('-', '')) ||
+            configPath
+              .toLowerCase()
+              .includes(ide.displayName.toLowerCase().replace(/\s+/g, '')),
+        )
         if (detectedIDE) {
-          this.configSource = detectedIDE.id;
+          this.configSource = detectedIDE.id
         }
-        const config = this.readConfigFile(configPath);
+        const config = this.readConfigFile(configPath)
         if (config) {
-          imported = Object.keys(config.mcpServers).length;
-          const ide = this.ideDefinitions.find(d => d.id === this.configSource);
-          const sourceName = ide ? ide.displayName : 'IDE';
-          logger.info({ path: configPath, imported, source: this.configSource }, `Loaded ${sourceName} configs from specified path`);
+          imported = Object.keys(config.mcpServers).length
+          const ide = this.ideDefinitions.find(
+            (d) => d.id === this.configSource,
+          )
+          const sourceName = ide ? ide.displayName : 'IDE'
+          logger.info(
+            { path: configPath, imported, source: this.configSource },
+            `Loaded ${sourceName} configs from specified path`,
+          )
         }
       } else {
-        errors.push(`Config file not found: ${configPath}`);
+        errors.push(`Config file not found: ${configPath}`)
       }
     } else {
       // Refresh the config file location
-      const result = this.findConfigFile();
-      this.configPath = result.path;
-      this.configSource = result.source;
+      const result = this.findConfigFile()
+      this.configPath = result.path
+      this.configSource = result.source
       if (this.configPath) {
-        const config = this.readConfigFile(this.configPath);
+        const config = this.readConfigFile(this.configPath)
         if (config) {
-          imported = Object.keys(config.mcpServers).length;
-          const ide = this.ideDefinitions.find(d => d.id === this.configSource);
-          const sourceName = ide ? ide.displayName : 'IDE';
-          logger.info({ path: this.configPath, imported, source: this.configSource }, `Refreshed ${sourceName} configs`);
+          imported = Object.keys(config.mcpServers).length
+          const ide = this.ideDefinitions.find(
+            (d) => d.id === this.configSource,
+          )
+          const sourceName = ide ? ide.displayName : 'IDE'
+          logger.info(
+            { path: this.configPath, imported, source: this.configSource },
+            `Refreshed ${sourceName} configs`,
+          )
         }
       } else {
-        const ideNames = this.ideDefinitions.map(d => d.displayName).join(', ');
-        errors.push(`MCP config file not found in standard locations for ${ideNames}`);
+        const ideNames = this.ideDefinitions
+          .map((d) => d.displayName)
+          .join(', ')
+        errors.push(
+          `MCP config file not found in standard locations for ${ideNames}`,
+        )
       }
     }
 
-    return { imported, errors };
+    return { imported, errors }
   }
 
   /**
    * Get the path to the config file (Cursor or Claude Code)
    */
   getCursorConfigPath(): string | null {
-    return this.configPath;
+    return this.configPath
   }
 
   /**
    * Get the source of the config file
    */
   getConfigSource(): 'cursor' | 'claude-code' | 'github-copilot' | null {
-    return this.configSource;
+    return this.configSource
   }
 
   /**
@@ -431,10 +634,9 @@ export class ConfigManager {
    */
   getConfigSourceDisplayName(): string {
     if (!this.configSource) {
-      return 'IDE';
+      return 'IDE'
     }
-    const ide = this.ideDefinitions.find(d => d.id === this.configSource);
-    return ide ? ide.displayName : 'IDE';
+    const ide = this.ideDefinitions.find((d) => d.id === this.configSource)
+    return ide ? ide.displayName : 'IDE'
   }
 }
-

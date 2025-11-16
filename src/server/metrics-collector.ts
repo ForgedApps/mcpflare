@@ -1,23 +1,23 @@
-import logger from '../utils/logger.js';
+import logger from '../utils/logger.js'
 
 interface ExecutionMetrics {
-  total_executions: number;
-  successful_executions: number;
-  failed_executions: number;
-  total_execution_time_ms: number;
-  average_execution_time_ms: number;
-  total_mcp_calls: number;
-  estimated_tokens_saved: number;
+  total_executions: number
+  successful_executions: number
+  failed_executions: number
+  total_execution_time_ms: number
+  average_execution_time_ms: number
+  total_mcp_calls: number
+  estimated_tokens_saved: number
 }
 
 interface MCPMetrics {
-  mcp_id: string;
-  load_time_ms: number;
-  executions: ExecutionMetrics;
+  mcp_id: string
+  load_time_ms: number
+  executions: ExecutionMetrics
 }
 
 export class MetricsCollector {
-  private mcpMetrics: Map<string, MCPMetrics> = new Map();
+  private mcpMetrics: Map<string, MCPMetrics> = new Map()
   private globalMetrics: ExecutionMetrics = {
     total_executions: 0,
     successful_executions: 0,
@@ -26,7 +26,7 @@ export class MetricsCollector {
     average_execution_time_ms: 0,
     total_mcp_calls: 0,
     estimated_tokens_saved: 0,
-  };
+  }
 
   recordMCPLoad(mcpId: string, loadTimeMs: number): void {
     this.mcpMetrics.set(mcpId, {
@@ -41,75 +41,75 @@ export class MetricsCollector {
         total_mcp_calls: 0,
         estimated_tokens_saved: 0,
       },
-    });
+    })
 
-    logger.debug({ mcpId, loadTimeMs }, 'MCP load metrics recorded');
+    logger.debug({ mcpId, loadTimeMs }, 'MCP load metrics recorded')
   }
 
   recordExecution(
     mcpId: string,
     executionTimeMs: number,
     success: boolean,
-    mcpCallsMade: number
+    mcpCallsMade: number,
   ): void {
-    const mcpMetric = this.mcpMetrics.get(mcpId);
+    const mcpMetric = this.mcpMetrics.get(mcpId)
 
     if (mcpMetric) {
-      mcpMetric.executions.total_executions++;
-      
+      mcpMetric.executions.total_executions++
+
       if (success) {
-        mcpMetric.executions.successful_executions++;
+        mcpMetric.executions.successful_executions++
       } else {
-        mcpMetric.executions.failed_executions++;
+        mcpMetric.executions.failed_executions++
       }
 
-      mcpMetric.executions.total_execution_time_ms += executionTimeMs;
+      mcpMetric.executions.total_execution_time_ms += executionTimeMs
       mcpMetric.executions.average_execution_time_ms =
         mcpMetric.executions.total_execution_time_ms /
-        mcpMetric.executions.total_executions;
-      
-      mcpMetric.executions.total_mcp_calls += mcpCallsMade;
+        mcpMetric.executions.total_executions
+
+      mcpMetric.executions.total_mcp_calls += mcpCallsMade
 
       // Estimate tokens saved based on MCP calls
       // Assumption: Each traditional tool call uses ~1500 tokens
       // Code mode uses ~300 tokens + ~100 per result
-      const traditionalTokens = mcpCallsMade * 1500;
-      const codeModeTokens = 300 + (mcpCallsMade * 100);
-      const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens);
-      
-      mcpMetric.executions.estimated_tokens_saved += tokensSaved;
+      const traditionalTokens = mcpCallsMade * 1500
+      const codeModeTokens = 300 + mcpCallsMade * 100
+      const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens)
+
+      mcpMetric.executions.estimated_tokens_saved += tokensSaved
     }
 
     // Update global metrics
-    this.globalMetrics.total_executions++;
-    
+    this.globalMetrics.total_executions++
+
     if (success) {
-      this.globalMetrics.successful_executions++;
+      this.globalMetrics.successful_executions++
     } else {
-      this.globalMetrics.failed_executions++;
+      this.globalMetrics.failed_executions++
     }
 
-    this.globalMetrics.total_execution_time_ms += executionTimeMs;
+    this.globalMetrics.total_execution_time_ms += executionTimeMs
     this.globalMetrics.average_execution_time_ms =
       this.globalMetrics.total_execution_time_ms /
-      this.globalMetrics.total_executions;
-    
-    this.globalMetrics.total_mcp_calls += mcpCallsMade;
+      this.globalMetrics.total_executions
 
-    const traditionalTokens = mcpCallsMade * 1500;
-    const codeModeTokens = 300 + (mcpCallsMade * 100);
-    const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens);
-    
-    this.globalMetrics.estimated_tokens_saved += tokensSaved;
+    this.globalMetrics.total_mcp_calls += mcpCallsMade
+
+    const traditionalTokens = mcpCallsMade * 1500
+    const codeModeTokens = 300 + mcpCallsMade * 100
+    const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens)
+
+    this.globalMetrics.estimated_tokens_saved += tokensSaved
 
     logger.debug(
       { mcpId, executionTimeMs, success, mcpCallsMade, tokensSaved },
-      'Execution metrics recorded'
-    );
+      'Execution metrics recorded',
+    )
   }
 
   getMetrics() {
-    const mcpMetricsArray = Array.from(this.mcpMetrics.values());
+    const mcpMetricsArray = Array.from(this.mcpMetrics.values())
 
     return {
       global: this.globalMetrics,
@@ -128,11 +128,11 @@ export class MetricsCollector {
               this.globalMetrics.total_executions
             : 0,
       },
-    };
+    }
   }
 
   resetMetrics(): void {
-    this.mcpMetrics.clear();
+    this.mcpMetrics.clear()
     this.globalMetrics = {
       total_executions: 0,
       successful_executions: 0,
@@ -141,9 +141,8 @@ export class MetricsCollector {
       average_execution_time_ms: 0,
       total_mcp_calls: 0,
       estimated_tokens_saved: 0,
-    };
+    }
 
-    logger.info('Metrics reset');
+    logger.info('Metrics reset')
   }
 }
-

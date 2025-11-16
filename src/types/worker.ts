@@ -1,11 +1,11 @@
 export interface WorkerCode {
-  compatibilityDate: string;
-  compatibilityFlags?: string[];
-  experimental?: boolean;
-  mainModule: string;
-  modules: Record<string, string | ModuleContent>;
-  env?: Record<string, any>;
-  globalOutbound?: any;
+  compatibilityDate: string
+  compatibilityFlags?: string[]
+  experimental?: boolean
+  mainModule: string
+  modules: Record<string, string | ModuleContent>
+  env?: Record<string, any>
+  globalOutbound?: any
 }
 
 export type ModuleContent =
@@ -14,16 +14,12 @@ export type ModuleContent =
   | { py: string }
   | { text: string }
   | { data: ArrayBuffer }
-  | { json: object };
+  | { json: object }
 
 export interface WorkerStub {
-  getEntrypoint(name?: string, options?: { props?: any }): any;
+  getEntrypoint(name?: string, options?: { props?: any }): any
 }
 
 export interface WorkerLoader {
-  get(
-    id: string,
-    getCodeCallback: () => Promise<WorkerCode>
-  ): WorkerStub;
+  get(id: string, getCodeCallback: () => Promise<WorkerCode>): WorkerStub
 }
-
