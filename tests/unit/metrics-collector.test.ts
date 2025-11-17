@@ -29,7 +29,6 @@ describe('MetricsCollector', () => {
       expect(mcpMetric.executions.failed_executions).toBe(0);
       expect(mcpMetric.executions.total_execution_time_ms).toBe(0);
       expect(mcpMetric.executions.total_mcp_calls).toBe(0);
-      expect(mcpMetric.executions.estimated_tokens_saved).toBe(0);
     });
 
     it('should handle multiple MCP loads', () => {
@@ -84,17 +83,6 @@ describe('MetricsCollector', () => {
       expect(mcpMetric.executions.average_execution_time_ms).toBe(100);
     });
 
-    it('should calculate tokens saved', () => {
-      collector.recordExecution('mcp-1', 50, true, 3);
-
-      const metrics = collector.getMetrics();
-      const mcpMetric = metrics.per_mcp[0];
-      
-      // Traditional: 3 * 1500 = 4500 tokens
-      // Code mode: 300 + (3 * 100) = 600 tokens
-      // Saved: 4500 - 600 = 3900 tokens
-      expect(mcpMetric.executions.estimated_tokens_saved).toBe(3900);
-    });
 
     it('should update global metrics', () => {
       collector.recordMCPLoad('mcp-2', 200);
@@ -155,18 +143,6 @@ describe('MetricsCollector', () => {
       expect(metrics.summary.success_rate).toBeCloseTo(66.67, 1);
     });
 
-    it('should calculate average tokens saved per execution', () => {
-      collector.recordMCPLoad('mcp-1', 100);
-      collector.recordExecution('mcp-1', 50, true, 2);
-      collector.recordExecution('mcp-1', 50, true, 1);
-
-      const metrics = collector.getMetrics();
-      
-      // First: 2 calls = 3000 - 500 = 2500 saved
-      // Second: 1 call = 1500 - 400 = 1100 saved
-      // Average: (2500 + 1100) / 2 = 1800
-      expect(metrics.summary.average_tokens_saved_per_execution).toBe(1800);
-    });
 
     it('should return correct structure', () => {
       collector.recordMCPLoad('mcp-1', 100);
@@ -179,7 +155,6 @@ describe('MetricsCollector', () => {
       expect(metrics).toHaveProperty('summary');
       expect(metrics.summary).toHaveProperty('total_mcps_loaded');
       expect(metrics.summary).toHaveProperty('success_rate');
-      expect(metrics.summary).toHaveProperty('average_tokens_saved_per_execution');
     });
   });
 
@@ -207,7 +182,6 @@ describe('MetricsCollector', () => {
       expect(metrics.global.failed_executions).toBe(0);
       expect(metrics.global.total_execution_time_ms).toBe(0);
       expect(metrics.global.total_mcp_calls).toBe(0);
-      expect(metrics.global.estimated_tokens_saved).toBe(0);
     });
   });
 });

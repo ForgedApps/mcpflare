@@ -7,7 +7,6 @@ interface ExecutionMetrics {
   total_execution_time_ms: number
   average_execution_time_ms: number
   total_mcp_calls: number
-  estimated_tokens_saved: number
 }
 
 interface MCPMetrics {
@@ -25,7 +24,6 @@ export class MetricsCollector {
     total_execution_time_ms: 0,
     average_execution_time_ms: 0,
     total_mcp_calls: 0,
-    estimated_tokens_saved: 0,
   }
 
   recordMCPLoad(mcpId: string, loadTimeMs: number): void {
@@ -39,7 +37,6 @@ export class MetricsCollector {
         total_execution_time_ms: 0,
         average_execution_time_ms: 0,
         total_mcp_calls: 0,
-        estimated_tokens_saved: 0,
       },
     })
 
@@ -69,15 +66,6 @@ export class MetricsCollector {
         mcpMetric.executions.total_executions
 
       mcpMetric.executions.total_mcp_calls += mcpCallsMade
-
-      // Estimate tokens saved based on MCP calls
-      // Assumption: Each traditional tool call uses ~1500 tokens
-      // Code mode uses ~300 tokens + ~100 per result
-      const traditionalTokens = mcpCallsMade * 1500
-      const codeModeTokens = 300 + mcpCallsMade * 100
-      const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens)
-
-      mcpMetric.executions.estimated_tokens_saved += tokensSaved
     }
 
     // Update global metrics
@@ -96,14 +84,8 @@ export class MetricsCollector {
 
     this.globalMetrics.total_mcp_calls += mcpCallsMade
 
-    const traditionalTokens = mcpCallsMade * 1500
-    const codeModeTokens = 300 + mcpCallsMade * 100
-    const tokensSaved = Math.max(0, traditionalTokens - codeModeTokens)
-
-    this.globalMetrics.estimated_tokens_saved += tokensSaved
-
     logger.debug(
-      { mcpId, executionTimeMs, success, mcpCallsMade, tokensSaved },
+      { mcpId, executionTimeMs, success, mcpCallsMade },
       'Execution metrics recorded',
     )
   }
@@ -122,11 +104,6 @@ export class MetricsCollector {
                 this.globalMetrics.total_executions) *
               100
             : 0,
-        average_tokens_saved_per_execution:
-          this.globalMetrics.total_executions > 0
-            ? this.globalMetrics.estimated_tokens_saved /
-              this.globalMetrics.total_executions
-            : 0,
       },
     }
   }
@@ -140,7 +117,6 @@ export class MetricsCollector {
       total_execution_time_ms: 0,
       average_execution_time_ms: 0,
       total_mcp_calls: 0,
-      estimated_tokens_saved: 0,
     }
 
     logger.info('Metrics reset')

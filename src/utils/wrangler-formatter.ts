@@ -352,7 +352,27 @@ export function formatExecutionResult(result: {
   execution_time_ms: number
   metrics?: {
     mcp_calls_made: number
-    tokens_saved_estimate: number
+    tools_called?: string[]
+    schema_efficiency?: {
+      total_tools_available: number
+      tools_used: string[]
+      schema_size_total_chars: number
+      schema_size_used_chars: number
+      schema_utilization_percent: number
+      schema_efficiency_ratio: number
+      schema_size_reduction_chars: number
+      schema_size_reduction_percent: number
+      estimated_tokens_total?: number
+      estimated_tokens_used?: number
+      estimated_tokens_saved?: number
+    }
+    security?: {
+      network_isolation_enabled: boolean
+      process_isolation_enabled: boolean
+      isolation_type: string
+      security_level: string
+      protection_summary: string[]
+    }
   }
 }): string {
   const lines: string[] = []
@@ -389,10 +409,32 @@ export function formatExecutionResult(result: {
   }
 
   lines.push('Metrics:')
-  lines.push(`  Execution Time: ${result.execution_time_ms}ms`)
   if (result.metrics) {
-    lines.push(`  MCP Calls Made: ${result.metrics.mcp_calls_made}`)
-    lines.push(`  Tokens Saved (est.): ${result.metrics.tokens_saved_estimate}`)
+    // Combine MCP calls, execution time, and schema reduction with token estimate
+    let firstLine = `${result.metrics.mcp_calls_made} MCP calls: ${result.execution_time_ms}ms`
+    if (result.metrics.schema_efficiency) {
+      const se = result.metrics.schema_efficiency
+      const reduction = se.schema_size_reduction_percent.toFixed(0)
+      if (reduction !== '0') {
+        // Show token estimate if available (more meaningful than just percentage)
+        if (se.estimated_tokens_saved && se.estimated_tokens_saved > 0) {
+          firstLine += ` (~${se.estimated_tokens_saved.toLocaleString()} tokens saved, ${reduction}% reduction)`
+        } else {
+          firstLine += ` (${reduction}% schema reduction)`
+        }
+      }
+    }
+    lines.push(`  ${firstLine}`)
+    
+    // Security Metrics - security level first
+    if (result.metrics.security) {
+      const sec = result.metrics.security
+      const networkStatus = sec.network_isolation_enabled ? '✓' : '✗'
+      const processStatus = sec.process_isolation_enabled ? '✓' : '✗'
+      lines.push(`  Security (${sec.security_level.toUpperCase()}): Network ${networkStatus} | Process ${processStatus}`)
+    }
+  } else {
+    lines.push(`  Execution Time: ${result.execution_time_ms}ms`)
   }
 
   lines.push('─'.repeat(60))

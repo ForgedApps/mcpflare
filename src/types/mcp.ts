@@ -43,6 +43,30 @@ export const ExecuteCodeRequestSchema = z.object({
 
 export type ExecuteCodeRequest = z.infer<typeof ExecuteCodeRequestSchema>
 
+// Schema Efficiency Metrics
+export interface SchemaEfficiencyMetrics {
+  total_tools_available: number
+  tools_used: string[]
+  schema_size_total_chars: number
+  schema_size_used_chars: number
+  schema_utilization_percent: number
+  schema_efficiency_ratio: number
+  schema_size_reduction_chars: number
+  schema_size_reduction_percent: number
+  estimated_tokens_total?: number
+  estimated_tokens_used?: number
+  estimated_tokens_saved?: number
+}
+
+// Security Metrics
+export interface SecurityMetrics {
+  network_isolation_enabled: boolean
+  process_isolation_enabled: boolean
+  isolation_type: string
+  security_level: string
+  protection_summary: string[]
+}
+
 // Execution Result
 export interface ExecutionResult {
   success: boolean
@@ -51,7 +75,9 @@ export interface ExecutionResult {
   execution_time_ms: number
   metrics: {
     mcp_calls_made: number
-    tokens_saved_estimate: number
+    tools_called?: string[]
+    schema_efficiency?: SchemaEfficiencyMetrics
+    security?: SecurityMetrics
   }
 }
 

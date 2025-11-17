@@ -99,7 +99,6 @@ describe('wrangler-formatter', () => {
         execution_time_ms: 100,
         metrics: {
           mcp_calls_made: 2,
-          tokens_saved_estimate: 50,
         },
       });
       
@@ -108,7 +107,6 @@ describe('wrangler-formatter', () => {
       expect(result).toContain('Test output');
       expect(result).toContain('Execution Time: 100ms');
       expect(result).toContain('MCP Calls Made: 2');
-      expect(result).toContain('Tokens Saved (est.): 50');
     });
 
     it('should format failed execution', () => {
@@ -140,7 +138,6 @@ describe('wrangler-formatter', () => {
         execution_time_ms: 150,
         metrics: {
           mcp_calls_made: 1,
-          tokens_saved_estimate: 25,
         },
       });
       

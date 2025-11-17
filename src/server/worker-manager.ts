@@ -1,4 +1,4 @@
-import { type ChildProcess, exec, spawn } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   createServer,
@@ -6,7 +6,6 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http'
-import { promisify } from 'node:util'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { MCPConfig, MCPInstance, MCPTool } from '../types/mcp.js'
@@ -16,8 +15,6 @@ import logger from '../utils/logger.js'
 import { ProgressIndicator } from '../utils/progress-indicator.js'
 import { formatWranglerError } from '../utils/wrangler-formatter.js'
 import { SchemaConverter } from './schema-converter.js'
-
-const execAsync = promisify(exec)
 
 /**
  * Cached schema data for an MCP
@@ -44,21 +41,7 @@ export class WorkerManager {
 
   constructor() {
     this.schemaConverter = new SchemaConverter()
-    this.checkWranglerAvailability()
     this.startRPCServer()
-  }
-
-  private async checkWranglerAvailability(): Promise<void> {
-    try {
-      await execAsync('npx wrangler --version')
-      this.wranglerAvailable = true
-      logger.info('Wrangler is available via npx')
-    } catch (_error) {
-      this.wranglerAvailable = false
-      logger.warn(
-        'Wrangler not available via npx. Worker execution will be simulated.',
-      )
-    }
   }
 
   /**
@@ -181,6 +164,127 @@ export class WorkerManager {
    */
   private getCacheKey(mcpName: string, config: MCPConfig): string {
     return `${mcpName}:${this.hashConfig(mcpName, config)}`
+  }
+
+  /**
+   * Calculate schema size in characters for a tool
+   */
+  private calculateToolSchemaSize(tool: MCPTool): number {
+    return JSON.stringify(tool).length
+  }
+
+  /**
+   * Estimate tokens from character count
+   * For JSON/structured data, ~3.5 chars per token is a reasonable approximation
+   * This is more accurate than per-call estimates since we're measuring actual schema sizes
+   */
+  private estimateTokens(chars: number): number {
+    // Conservative estimate: JSON/structured data typically tokenizes at ~3-4 chars/token
+    // Using 3.5 as a middle ground for schema data (JSON with descriptions)
+    return Math.round(chars / 3.5)
+  }
+
+  /**
+   * Calculate schema efficiency metrics
+   */
+  private calculateSchemaMetrics(
+    tools: MCPTool[],
+    toolsCalled: string[],
+  ): {
+    total_tools_available: number
+    tools_used: string[]
+    schema_size_total_chars: number
+    schema_size_used_chars: number
+    schema_utilization_percent: number
+    schema_efficiency_ratio: number
+    schema_size_reduction_chars: number
+    schema_size_reduction_percent: number
+    estimated_tokens_total?: number
+    estimated_tokens_used?: number
+    estimated_tokens_saved?: number
+  } {
+    const totalTools = tools.length
+    const toolsUsedSet = new Set(toolsCalled)
+    const toolsUsed = Array.from(toolsUsedSet)
+
+    // Calculate total schema size (all tools)
+    const schemaSizeTotal = tools.reduce(
+      (sum, tool) => sum + this.calculateToolSchemaSize(tool),
+      0,
+    )
+
+    // Calculate schema size for tools actually used
+    const schemaSizeUsed = tools
+      .filter((tool) => toolsUsedSet.has(tool.name))
+      .reduce((sum, tool) => sum + this.calculateToolSchemaSize(tool), 0)
+
+    // Calculate metrics
+    const schemaUtilizationPercent =
+      schemaSizeTotal > 0 ? (schemaSizeUsed / schemaSizeTotal) * 100 : 0
+
+    const schemaEfficiencyRatio =
+      schemaSizeUsed > 0 ? schemaSizeTotal / schemaSizeUsed : 0
+
+    const schemaSizeReduction = schemaSizeTotal - schemaSizeUsed
+    const schemaSizeReductionPercent =
+      schemaSizeTotal > 0 ? (schemaSizeReduction / schemaSizeTotal) * 100 : 0
+
+    // Estimate tokens based on actual schema sizes
+    // More accurate than per-call estimates since we're measuring real data
+    const estimatedTokensTotal = this.estimateTokens(schemaSizeTotal)
+    const estimatedTokensUsed = this.estimateTokens(schemaSizeUsed)
+    const estimatedTokensSaved = estimatedTokensTotal - estimatedTokensUsed
+
+    return {
+      total_tools_available: totalTools,
+      tools_used: toolsUsed,
+      schema_size_total_chars: schemaSizeTotal,
+      schema_size_used_chars: schemaSizeUsed,
+      schema_utilization_percent:
+        Math.round(schemaUtilizationPercent * 100) / 100,
+      schema_efficiency_ratio: Math.round(schemaEfficiencyRatio * 100) / 100,
+      schema_size_reduction_chars: schemaSizeReduction,
+      schema_size_reduction_percent:
+        Math.round(schemaSizeReductionPercent * 100) / 100,
+      estimated_tokens_total: estimatedTokensTotal,
+      estimated_tokens_used: estimatedTokensUsed,
+      estimated_tokens_saved: estimatedTokensSaved,
+    }
+  }
+
+  /**
+   * Get security metrics for the current execution
+   */
+  private getSecurityMetrics(): {
+    network_isolation_enabled: boolean
+    process_isolation_enabled: boolean
+    isolation_type: string
+    security_level: string
+    protection_summary: string[]
+  } {
+    // Currently all security features are enabled
+    // In the future, network isolation may be conditional based on allowlist
+    const networkIsolationEnabled = true // globalOutbound: null
+    const processIsolationEnabled = true // Worker isolates
+    const isolationType = 'worker_isolate'
+    const securityLevel = 'high'
+
+    const protectionSummary: string[] = []
+    if (networkIsolationEnabled) {
+      protectionSummary.push('Network isolation (no outbound access)')
+    }
+    if (processIsolationEnabled) {
+      protectionSummary.push('Process isolation (separate Worker)')
+    }
+    protectionSummary.push('Code sandboxing (isolated execution)')
+
+    return {
+      network_isolation_enabled: networkIsolationEnabled,
+      process_isolation_enabled: processIsolationEnabled,
+      isolation_type: isolationType,
+      security_level: securityLevel,
+      protection_summary: protectionSummary,
+    }
   }
 
   /**
@@ -316,18 +420,36 @@ export class WorkerManager {
 
       const executionTime = Date.now() - startTime
 
+      // Calculate schema efficiency metrics
+      const toolsCalled = result.metrics?.tools_called || []
+      const schemaEfficiency = this.calculateSchemaMetrics(
+        instance.tools,
+        toolsCalled,
+      )
+
+      // Get security metrics
+      const security = this.getSecurityMetrics()
+
       logger.info({ mcpId, executionTime }, 'Code executed successfully')
 
       return {
         success: true,
         output: result.output,
         execution_time_ms: executionTime,
-        metrics: result.metrics,
+        metrics: {
+          ...result.metrics,
+          schema_efficiency: schemaEfficiency,
+          security,
+        },
       }
     } catch (error: any) {
       const executionTime = Date.now() - startTime
 
       logger.error({ error, mcpId, executionTime }, 'Code execution failed')
+
+      // Calculate schema efficiency metrics even on failure (no tools called)
+      const schemaEfficiency = this.calculateSchemaMetrics(instance.tools, [])
+      const security = this.getSecurityMetrics()
 
       return {
         success: false,
@@ -335,7 +457,9 @@ export class WorkerManager {
         execution_time_ms: executionTime,
         metrics: {
           mcp_calls_made: 0,
-          tokens_saved_estimate: 0,
+          tools_called: [],
+          schema_efficiency: schemaEfficiency,
+          security,
         },
       }
     }
@@ -658,48 +782,20 @@ export class WorkerManager {
     _typescriptApi: string, // Not used in worker code (causes strict mode syntax errors), kept for API compatibility
     userCode: string,
   ): Promise<WorkerCode> {
-    // Get RPC server URL for Workers to call MCP tools
+    // Get RPC server URL for parent Worker to call (via Service Binding)
     const rpcUrl = await this.getRPCUrl()
 
-    // Generate MCP binding stubs that make HTTP requests to the RPC server
-    // We embed the RPC URL and MCP ID directly in the code (functions can't be cloned via env)
-    // Escape the RPC URL and MCP ID for safe embedding in the generated code
-    const escapedRpcUrl = rpcUrl
-      .replace(/\\/g, '\\\\')
-      .replace(/`/g, '\\`')
-      .replace(/\$/g, '\\$')
-    const escapedMcpId = mcpId
-      .replace(/\\/g, '\\\\')
-      .replace(/`/g, '\\`')
-      .replace(/\$/g, '\\$')
-
+    // Generate MCP binding stubs that use Service Binding instead of fetch()
+    // The Service Binding (env.MCP) is provided by the parent Worker via ctx.exports
+    // This allows dynamic workers to remain fully isolated (globalOutbound: null)
     const mcpBindingStubs = tools
       .map((tool) => {
         // Escape tool name for use in template string
         const escapedToolName = tool.name.replace(/'/g, "\\'")
         return `    ${tool.name}: async (input) => {
-      // Call MCP tool via RPC server (URL embedded in code)
-      const response = await fetch('${escapedRpcUrl}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mcpId: '${escapedMcpId}',
-          toolName: '${escapedToolName}',
-          input: input || {}
-        })
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error('MCP tool call failed: ' + (error.error || response.statusText));
-      }
-      
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error('MCP tool call failed: ' + result.error);
-      }
-      
-      return result.result;
+      // Call MCP tool via Service Binding (no fetch() needed - native RPC)
+      // The Service Binding is provided by the parent Worker and bridges to Node.js RPC server
+      return await env.MCP.callTool('${escapedToolName}', input || {});
     }`
       })
       .join(',\n')
@@ -710,9 +806,11 @@ export class WorkerManager {
     // Note: TypeScript API definitions are not included here as they cause syntax errors in strict mode.
     // Type definitions are only needed for IDE/type checking, not at runtime.
     // Following Cloudflare's Code Mode pattern: https://blog.cloudflare.com/code-mode/
+    // Uses Service Bindings for secure MCP access (no fetch() needed - true isolation)
     const workerScript = `
 // Dynamic Worker that executes AI-generated code
 // This Worker is spawned via Worker Loader API from the parent Worker
+// Uses Service Bindings for secure MCP access (globalOutbound: null enabled)
 export default {
   async fetch(request, env, ctx) {
     const { code, timeout = 30000 } = await request.json();
@@ -736,23 +834,26 @@ export default {
     };
 
     let mcpCallCount = 0;
+    const toolsCalled = new Set();
     let result;
 
     try {
-      // Create MCP binding implementation inside fetch handler where env is available
-      // This follows Cloudflare's Code Mode pattern where bindings are accessed via env
-      // Reference: https://blog.cloudflare.com/code-mode/
+      // Create MCP binding implementation using Service Binding (env.MCP)
+      // The Service Binding is provided by the parent Worker and allows secure MCP access
+      // without requiring fetch() - enabling true network isolation (globalOutbound: null)
+      // Reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/
       const mcpBinding = {
 ${mcpBindingStubs}
       };
 
-      // Create MCP proxy to count calls
+      // Create MCP proxy to track calls and tool names
       const mcp = new Proxy(mcpBinding, {
         get(target, prop) {
           const original = target[prop];
           if (typeof original === 'function') {
             return async (...args) => {
               mcpCallCount++;
+              toolsCalled.add(String(prop));
               return await original.apply(target, args);
             };
           }
@@ -782,7 +883,7 @@ ${mcpBindingStubs}
         result: result !== undefined ? result : null,
         metrics: {
           mcp_calls_made: mcpCallCount,
-          tokens_saved_estimate: calculateTokensSaved(mcpCallCount),
+          tools_called: Array.from(toolsCalled),
         },
       }), {
         headers: { 'Content-Type': 'application/json' },
@@ -795,7 +896,7 @@ ${mcpBindingStubs}
         output: logs.join('\\n'),
         metrics: {
           mcp_calls_made: mcpCallCount,
-          tokens_saved_estimate: 0,
+          tools_called: Array.from(toolsCalled),
         },
       }), {
         status: 500,
@@ -810,13 +911,6 @@ ${mcpBindingStubs}
   }
 };
 
-function calculateTokensSaved(mcpCalls) {
-  // Traditional tool calling: ~1500 tokens per call
-  const traditionalTokens = mcpCalls * 1500;
-  // Code mode: ~300 tokens for code + ~100 tokens per result
-  const codeModeTokens = 300 + (mcpCalls * 100);
-  return Math.max(0, traditionalTokens - codeModeTokens);
-}
 `
 
     return {
@@ -826,14 +920,15 @@ function calculateTokensSaved(mcpCalls) {
         'worker.js': workerScript,
       },
       env: {
+        // MCP_ID and MCP_RPC_URL are used by the parent Worker to create the Service Binding
+        // The parent Worker will replace these with the actual Service Binding (env.MCP)
         MCP_ID: mcpId,
-        MCP_RPC_URL: rpcUrl, // RPC server URL - passed as string (functions can't be cloned)
+        MCP_RPC_URL: rpcUrl,
       },
-      // Note: We need fetch() to call the RPC server
-      // The RPC URL is embedded directly in the generated code, so workers can only call that specific URL
-      // TODO: In production, use a Service Binding for better security instead of allowing fetch()
-      // For now, we allow fetch() but the generated code only calls the embedded RPC URL
-      // globalOutbound: null, // Temporarily disabled to allow RPC calls via fetch()
+      // Enable true network isolation - dynamic workers cannot use fetch()
+      // MCP access is provided via Service Binding (env.MCP) which bridges to Node.js RPC server
+      // Reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/
+      globalOutbound: null,
     }
   }
 
@@ -843,48 +938,50 @@ function calculateTokensSaved(mcpCalls) {
     timeoutMs: number,
     instance: MCPInstance,
   ): Promise<any> {
-    // Ensure Wrangler availability check has completed
-    if (this.wranglerAvailable === null) {
-      await this.checkWranglerAvailability()
-    }
-
-    // Try to use Wrangler Worker Loader API if available
-    if (this.wranglerAvailable) {
-      return await this.executeWithWrangler(mcpId, code, timeoutMs, instance)
-    }
-
-    // Fallback: Simulated execution (only if Wrangler is confirmed unavailable)
-    // Only log to structured logger in non-CLI mode or verbose mode
-    // The console.warn below handles CLI display
-    const isCLIMode = process.env.CLI_MODE === 'true'
-    const isVerbose =
-      process.argv.includes('--verbose') || process.argv.includes('-v')
-    if (!isCLIMode || isVerbose) {
-      logger.warn(
-        { mcpId, wranglerAvailable: this.wranglerAvailable },
-        '⚠️  WARNING: Worker execution is SIMULATED. Wrangler is not available or execution failed.',
-      )
-    }
-    // Only show warning if Wrangler is confirmed unavailable (not just null/checking)
+    // If we've already determined Wrangler is unavailable, throw error immediately
     if (this.wranglerAvailable === false) {
-      console.warn(
-        '\n⚠️  DEVELOPMENT WARNING: Worker execution is currently simulated.\n' +
-          '   Wrangler is not available. Install Wrangler to enable real Worker execution:\n' +
-          '   npm install -g wrangler\n' +
-          '   or\n' +
-          '   npx wrangler --version\n',
+      throw new WorkerError(
+        'Wrangler is required for Worker execution but is not available.\n' +
+          'Please install Wrangler to enable code execution in isolated Worker environments:\n' +
+          '  npm install -g wrangler\n' +
+          '  or ensure npx can access wrangler: npx wrangler --version',
       )
     }
 
-    // Simulate execution with basic validation
-    return {
-      output:
-        `Simulated execution result for code (${code.length} chars)\n` +
-        `Note: This is a placeholder. Real Worker execution via Wrangler needed.`,
-      metrics: {
-        mcp_calls_made: 1, // Estimated
-        tokens_saved_estimate: 500,
-      },
+    // Try to use Wrangler Worker Loader API
+    // Wrangler provides the actual Cloudflare Worker isolation environment
+    try {
+      return await this.executeWithWrangler(mcpId, code, timeoutMs, instance)
+    } catch (error: any) {
+      // Check if this is a "Wrangler not found" error
+      const isWranglerNotFound =
+        error.message?.includes('spawn') ||
+        error.message?.includes('ENOENT') ||
+        error.message?.includes('not found') ||
+        error.code === 'ENOENT' ||
+        (error.message?.includes('wrangler') &&
+          error.message?.includes('command'))
+
+      // If Wrangler is not available, mark it as unavailable and throw error
+      // We don't simulate execution - Wrangler is required for proper isolation
+      if (isWranglerNotFound && this.wranglerAvailable === null) {
+        this.wranglerAvailable = false
+        logger.error(
+          { mcpId, error: error.message },
+          'Wrangler is required but not available',
+        )
+        throw new WorkerError(
+          'Wrangler is required for Worker execution but is not available.\n' +
+            'Wrangler provides the Cloudflare Worker isolation environment needed for safe code execution.\n' +
+            'Please install Wrangler:\n' +
+            '  npm install -g wrangler\n' +
+            '  or ensure npx can access wrangler: npx wrangler --version',
+        )
+      }
+
+      // For other errors (e.g., build errors, timeout), re-throw
+      // These are actual execution failures, not availability issues
+      throw error
     }
   }
 
@@ -1125,7 +1222,6 @@ function calculateTokensSaved(mcpCalls) {
         error?: string
         metrics?: {
           mcp_calls_made: number
-          tokens_saved_estimate: number
         }
       }
 
@@ -1161,7 +1257,6 @@ function calculateTokensSaved(mcpCalls) {
         result: result.result,
         metrics: result.metrics || {
           mcp_calls_made: 0,
-          tokens_saved_estimate: 0,
         },
       }
     } catch (error: any) {
