@@ -62,44 +62,47 @@ Result: ✅ Network access blocked
 
 ## 🔒 Security: Zero-Trust Execution
 
-MCP Guard runs all code in local Cloudflare Worker isolates with **zero access** to your filesystem, environment variables, network, or system, which protects against **data exfiltration**, **credential theft**, **filesystem access**, **arbitrary code execution**, and **process manipulation**.
+MCP Guard runs all code in local Cloudflare Worker isolates with **zero access** to your filesystem, environment variables, network, or system, which protects against data exfiltration, credential theft, filesystem access, arbitrary code execution, process manipulation, SSRF attacks, code injection, supply chain attacks, and more.
 
 **Three layers of protection:**
 1. **V8 Isolate Sandboxing** - Complete process isolation
 2. **Network Isolation** - No outbound network access, only MCP bindings can communicate
 3. **Code Validation** - Blocks dangerous patterns before execution
 
+📖 **[Read the security analysis](docs/SECURITY_ANALYSIS.md)** for attack vector details and defense-in-depth architecture.
+
 ## ⚡ Efficiency: Code Mode Execution
 
 Traditional MCP tool calling wastes your context window. MCP Guard uses **code mode** to reduce token usage by up to 98%.
 
-### The Problem
+### Example: Generating a Jira Sprint Report
 
-When you load 10 MCPs traditionally, every tool definition loads into context **before you even start**:
+**Traditional approach:** The LLM calls tools step-by-step, and every result flows through the context window:
 
-```
-10 MCPs × 8 tools × 250 tokens = 20,000 tokens gone
-```
+1. Fetch 200 sprint tickets → **25,000 tokens** loaded into context
+2. LLM reads all tickets to count completed vs blocked
+3. Fetch time tracking data → **5,000 tokens** more
+4. Generate summary → **300 tokens**
 
-Then every intermediate result flows through the LLM, wasting more tokens.
+**Total:** 30,300 tokens just to count tickets and generate a simple report.
 
-### The Solution
-
-With MCP Guard, the AI loads only what it needs and processes data in the isolate:
+**With MCP Guard:** The code runs in a secure sandbox, processes all 200 tickets, and only sends back the final summary. The LLM never has to read the individual tickets:
 
 ```typescript
-// AI writes code instead of making tool calls
-import * as gdrive from './servers/google-drive';
-import * as salesforce from './servers/salesforce';
+// Fetch tickets, filter and count in code, return only the summary
+import * as jira from './servers/jira';
 
-const doc = await gdrive.getDocument({ documentId: 'abc123' });
-await salesforce.updateRecord({
-  recordId: '00Q5f',
-  data: { Notes: doc.content }
-});
+const tickets = await jira.getSprintTickets({ sprintId: '123' });
+const stats = {
+  completed: tickets.filter(t => t.status === 'Done').length,
+  blocked: tickets.filter(t => t.labels.includes('blocked')).length,
+  total: tickets.length
+};
+
+console.log(`Sprint Summary: ${stats.completed}/${stats.total} completed, ${stats.blocked} blocked`);
 ```
 
-**Result:** Instead of 40,000 tokens, you use ~520 tokens. **98% reduction.**
+**Result:** Instead of 30,300 tokens, you use ~750 tokens. **97.5% reduction.**
 
 **Benefits:**
 - 📉 **Up to 98% reduction** in token usage

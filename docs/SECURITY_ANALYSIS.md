@@ -1,7 +1,5 @@
 # Security Benefits & Attack Vector Analysis
-## Code Mode + Cloudflare Workers Isolates for MCP Execution
-
-Based on the architecture from https://blog.cloudflare.com/code-mode/ and Cloudflare Workers isolates.
+## Code Mode + Cloudflare Worker Isolates for MCP Execution
 
 ---
 
@@ -576,10 +574,6 @@ logger.info({
 ⚠️ Timing attacks (partially)
 
 ### The Bottom Line:
-**Code Mode + Workers Isolates creates a highly secure execution environment** that protects against the vast majority of common attack vectors. It's **orders of magnitude more secure** than traditional approaches while maintaining the flexibility to execute arbitrary AI-generated code.
+**Code Mode + Worker Isolates creates a highly secure execution environment** that protects against the vast majority of common attack vectors. It's **orders of magnitude more secure** than traditional approaches while maintaining the flexibility to execute arbitrary AI-generated code.
 
 The key insight: **Even if malicious code is generated and executed, it can't escape the sandbox or access anything it shouldn't.**
-
----
-
-**This is why enterprises should use MCP Guard for MCP execution.** 🔒
