@@ -110,6 +110,27 @@ console.log(`Sprint Summary: ${stats.completed}/${stats.total} completed, ${stat
 - 💰 **Massive cost savings** on LLM API calls
 - ⚡ **No round-trips** for intermediate results
 
+## 📋 Prerequisites
+
+Before you begin, make sure you have:
+
+- **Node.js 20+** installed ([Download here](https://nodejs.org/))
+- **npm** (comes with Node.js)
+- **Git** (optional, for cloning the repository)
+- **GitHub Personal Access Token** (optional, for testing with GitHub MCP)
+
+### Getting a GitHub Token
+
+If you want to test with GitHub MCP:
+
+1. Go to [GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)](https://github.com/settings/tokens)
+2. Click "Generate new token (classic)"
+3. Give it a name like "MCP Guard Test"
+4. Select scopes: `repo` (for repository access)
+5. Click "Generate token"
+6. **Copy the token** (you won't see it again!)
+7. Set it as an environment variable: `GITHUB_PERSONAL_ACCESS_TOKEN` (see [GitHub MCP Server docs](https://github.com/github/github-mcp-server))
+
 ## 🏃 Quick Start
 
 **Requires:** [Node.js 20+](https://nodejs.org/) installed
@@ -163,6 +184,109 @@ mcpguard>
    list
    ```
 
+## 🧪 Testing with GitHub MCP
+
+Follow these steps to test the system with GitHub MCP:
+
+### 1. Start the CLI
+
+```bash
+npm run cli
+```
+
+### 2. Load the GitHub MCP Server
+
+At the `mcpguard>` prompt, type:
+
+```
+load
+```
+
+You'll be prompted for information. Enter:
+
+- **MCP name**: `github` (or any name you like)
+- **Command**: `npx`
+- **Args**: `-y,@modelcontextprotocol/server-github` (comma-separated)
+- **Environment variables**: `{"GITHUB_PERSONAL_ACCESS_TOKEN":"ghp_your_token_here"}` (as JSON)
+
+**Example interaction:**
+
+```
+mcpguard> load
+MCP name: github
+Command (e.g., npx): npx
+Args (comma-separated, or press Enter for none): -y,@modelcontextprotocol/server-github
+Environment variables as JSON (or press Enter for none): {"GITHUB_PERSONAL_ACCESS_TOKEN":"ghp_your_actual_token"}
+
+Loading MCP server...
+```
+
+### 3. Check What Was Loaded
+
+Type:
+
+```
+list
+```
+
+You should see your loaded MCP server with its ID, status, and available tools.
+
+### 4. Get the TypeScript API Schema
+
+Type:
+
+```
+schema
+```
+
+Enter the MCP ID from the previous step. You'll see the TypeScript API definitions that were generated from the MCP tools.
+
+### 5. Execute Some Code
+
+Type:
+
+```
+execute
+```
+
+You'll be prompted:
+- **MCP ID**: Enter the ID from step 3
+- **TypeScript code**: Enter your code (end with a blank line)
+- **Timeout**: Press Enter for default (30000ms)
+
+**Example code to test:**
+
+```typescript
+// Simple test
+console.log('Hello from Worker isolate!');
+const result = { message: 'Test successful', timestamp: Date.now() };
+console.log(JSON.stringify(result));
+```
+
+### 6. View Metrics
+
+Type:
+
+```
+metrics
+```
+
+This shows performance metrics including:
+- Total executions
+- Success rate
+- Average execution time
+- Estimated tokens saved
+
+### 7. Clean Up
+
+When done testing, unload the MCP:
+
+```
+unload
+```
+
+Enter the MCP ID to clean up resources.
+
 ## 📖 Available CLI Commands
 
 | Command | Description |
@@ -204,6 +328,69 @@ Configure your AI agent (Claude Desktop, Cursor IDE, etc.):
 - `get_mcp_schema` - Get TypeScript API definition for a loaded MCP
 - `unload_mcp_server` - Unload an MCP server
 - `get_metrics` - Get performance metrics
+
+## 🐛 Troubleshooting
+
+### "spawn npx ENOENT" or "Command not found: npx"
+
+This error means the system can't find `npx`. Try these solutions:
+
+1. **Verify Node.js is installed:**
+   ```bash
+   node --version
+   npm --version
+   npx --version
+   ```
+   Should show `v20.x.x` or higher for Node.js, and npx should be available.
+
+2. **Make sure Node.js is properly installed:**
+   - Ensure Node.js was installed with "Add to PATH" option
+   - Restart your terminal/PowerShell after installing Node.js
+   - Verify npx works manually: `npx --version`
+
+3. **Check your PATH:**
+   - Make sure Node.js installation directory is in your system PATH
+   - On Windows, this is usually `C:\Program Files\nodejs\` or `C:\Users\<username>\AppData\Roaming\npm`
+
+### "Cannot find module" errors
+
+Make sure you've installed dependencies:
+
+```bash
+npm install
+```
+
+### "GITHUB_PERSONAL_ACCESS_TOKEN is not set" or "Authentication Failed"
+
+Make sure you've set the environment variable with your GitHub token:
+
+```bash
+# On Windows (PowerShell)
+$env:GITHUB_PERSONAL_ACCESS_TOKEN="ghp_your_token_here"
+
+# On Mac/Linux
+export GITHUB_PERSONAL_ACCESS_TOKEN="ghp_your_token_here"
+```
+
+**Important**: The GitHub MCP server requires `GITHUB_PERSONAL_ACCESS_TOKEN` (not `GITHUB_TOKEN`). See the [official GitHub MCP Server documentation](https://github.com/github/github-mcp-server) for details.
+
+### Build errors
+
+If you see TypeScript errors, try:
+
+```bash
+# Clean and rebuild
+rm -rf dist
+npm run build
+```
+
+### MCP server won't start
+
+Check that:
+1. Your GitHub token is valid
+2. The token has the `repo` scope
+3. The environment variable is set correctly
+4. You've restarted the CLI after setting the environment variable
 
 ## 🤝 Contributing
 
