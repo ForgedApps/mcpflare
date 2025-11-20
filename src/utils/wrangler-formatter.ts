@@ -248,7 +248,7 @@ export function formatWranglerError(
  * Format nested JSON structure for better readability
  * Handles cases where JSON contains string fields with nested JSON
  */
-function formatNestedJsonStructure(obj: any, indent = 0): string {
+function formatNestedJsonStructure(obj: unknown, indent = 0): string {
   const indentStr = '  '.repeat(indent)
   const nextIndent = indent + 1
   const nextIndentStr = '  '.repeat(nextIndent)
@@ -270,7 +270,7 @@ function formatNestedJsonStructure(obj: any, indent = 0): string {
     const keys = Object.keys(obj)
     if (keys.length === 0) return '{}'
     const entries = keys.map((key) => {
-      const value = obj[key]
+      const value = (obj as Record<string, unknown>)[key]
       if (
         key === 'text' &&
         typeof value === 'string' &&

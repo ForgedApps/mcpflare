@@ -13,33 +13,23 @@
 
 // @ts-expect-error - cloudflare:workers is a runtime import, types available at runtime
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import type { WorkerCode } from '../types/worker.js'
+import type { WorkerCode, WorkerLoader } from '../types/worker.js'
 
 // ExecutionContext is a global type in Cloudflare Workers runtime
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type ExecutionContext = {
-  waitUntil(promise: Promise<any>): void
+  waitUntil(promise: Promise<unknown>): void
   passThroughOnException(): void
   exports: {
-    MCPBridge: (options?: { props?: { mcpId: string; rpcUrl: string } }) => MCPBridge
+    MCPBridge: (options?: {
+      props?: { mcpId: string; rpcUrl: string }
+    }) => MCPBridge
   }
 }
 
 interface Env {
-  LOADER: {
-    get(
-      id: string,
-      getCodeCallback: () => Promise<WorkerCode>,
-    ): {
-      getEntrypoint(
-        name?: string,
-        options?: { props?: any },
-      ): {
-        fetch(request: Request): Promise<Response>
-      }
-    }
-  }
-  [key: string]: any // MCP bindings and other env vars
+  LOADER: WorkerLoader
+  [key: string]: unknown // MCP bindings and other env vars
 }
 
 /**
@@ -49,11 +39,14 @@ interface Env {
  * The bridge internally calls the Node.js RPC server, allowing dynamic workers
  * to remain fully isolated (globalOutbound: null) while still accessing MCP functionality.
  */
-export class MCPBridge extends WorkerEntrypoint<{ mcpId: string; rpcUrl: string }> {
+export class MCPBridge extends WorkerEntrypoint<{
+  mcpId: string
+  rpcUrl: string
+}> {
   /**
    * Call an MCP tool via the Node.js RPC server
    */
-  async callTool(toolName: string, input: any): Promise<any> {
+  async callTool(toolName: string, input: unknown): Promise<unknown> {
     // @ts-expect-error - ctx.props is available at runtime via WorkerEntrypoint
     const { mcpId, rpcUrl } = this.ctx.props
 
@@ -69,17 +62,23 @@ export class MCPBridge extends WorkerEntrypoint<{ mcpId: string; rpcUrl: string 
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
+      const errorData = (await response.json().catch(() => ({
         error: response.statusText,
-      })) as { error?: string }
+      }))) as { error?: string }
       throw new Error(
         `MCP tool call failed: ${errorData.error || response.statusText}`,
       )
     }
 
-    const result = await response.json() as { success: boolean; result?: any; error?: string }
+    const result = (await response.json()) as {
+      success: boolean
+      result?: unknown
+      error?: string
+    }
     if (!result.success) {
-      throw new Error(`MCP tool call failed: ${result.error || 'Unknown error'}`)
+      throw new Error(
+        `MCP tool call failed: ${result.error || 'Unknown error'}`,
+      )
     }
 
     return result.result

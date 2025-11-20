@@ -1,12 +1,29 @@
 import { z } from 'zod'
 
+/**
+ * JSON Schema type definition for MCP tool input schemas
+ * Based on JSON Schema specification
+ */
+export interface JSONSchemaProperty {
+  type?: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
+  description?: string
+  properties?: Record<string, JSONSchemaProperty>
+  required?: string[]
+  items?: JSONSchemaProperty
+  default?: unknown
+  enum?: unknown[]
+  [key: string]: unknown // Allow additional JSON Schema properties
+}
+
 // MCP Tool Schema
 export const MCPToolSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   inputSchema: z.object({
     type: z.literal('object'),
-    properties: z.record(z.any()),
+    // JSON Schema properties can be complex nested structures
+    // Using unknown is safer than any and allows proper type checking when accessed
+    properties: z.record(z.unknown()),
     required: z.array(z.string()).optional(),
   }),
 })
@@ -98,8 +115,14 @@ export interface EnhancedErrorResponse {
   error_code: string
   error_message: string
   suggested_action?: string
-  context?: any
-  details?: any
+  /**
+   * Additional context about the error (e.g., tool name, status code, etc.)
+   */
+  context?: Record<string, unknown>
+  /**
+   * Additional error details (e.g., stack trace, nested errors, etc.)
+   */
+  details?: unknown
 }
 
 // Enhanced load MCP response

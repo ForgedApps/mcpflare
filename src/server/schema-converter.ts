@@ -1,4 +1,4 @@
-import type { MCPTool } from '../types/mcp.js'
+import type { JSONSchemaProperty, MCPTool } from '../types/mcp.js'
 import logger from '../utils/logger.js'
 
 export class SchemaConverter {
@@ -28,18 +28,20 @@ export class SchemaConverter {
     const required = tool.inputSchema.required || []
 
     const inputFields = Object.entries(inputProps)
-      .map(([key, schema]: [string, any]) => {
+      .map(([key, schema]) => {
         const optional = !required.includes(key)
-        const tsType = this.jsonSchemaToTypeScript(schema)
-        const description = schema.description
-          ? `\n  /**\n   * ${schema.description}\n   */\n  `
+        // Type assertion: properties are JSONSchemaProperty based on MCPTool type
+        const schemaProperty = schema as JSONSchemaProperty
+        const tsType = this.jsonSchemaToTypeScript(schemaProperty)
+        const description = schemaProperty.description
+          ? `\n  /**\n   * ${schemaProperty.description}\n   */\n  `
           : '\n  '
 
         return `${description}${key}${optional ? '?' : ''}: ${tsType};`
       })
       .join('\n')
 
-    return `interface ${inputInterfaceName} {\n${inputFields}\n}\n\ninterface ${outputInterfaceName} {\n  [key: string]: any;\n}`
+    return `interface ${inputInterfaceName} {\n${inputFields}\n}\n\ninterface ${outputInterfaceName} {\n  [key: string]: unknown;\n}`
   }
 
   private generateAPIObject(tools: MCPTool[]): string {
@@ -58,9 +60,9 @@ export class SchemaConverter {
     return `declare const mcp: {\n${methods}\n};`
   }
 
-  private jsonSchemaToTypeScript(schema: any): string {
+  private jsonSchemaToTypeScript(schema: JSONSchemaProperty): string {
     if (!schema.type) {
-      return 'any'
+      return 'unknown'
     }
 
     switch (schema.type) {
@@ -74,22 +76,23 @@ export class SchemaConverter {
       case 'array': {
         const itemType = schema.items
           ? this.jsonSchemaToTypeScript(schema.items)
-          : 'any'
+          : 'unknown'
         return `${itemType}[]`
       }
       case 'object':
         if (schema.properties) {
           const props = Object.entries(schema.properties)
-            .map(([key, value]: [string, any]) => {
+            .map(([key, value]) => {
               const optional = !(schema.required || []).includes(key)
-              return `${key}${optional ? '?' : ''}: ${this.jsonSchemaToTypeScript(value)}`
+              // Type assertion: nested properties are JSONSchemaProperty
+              return `${key}${optional ? '?' : ''}: ${this.jsonSchemaToTypeScript(value as JSONSchemaProperty)}`
             })
             .join('; ')
           return `{ ${props} }`
         }
-        return 'Record<string, any>'
+        return 'Record<string, unknown>'
       default:
-        return 'any'
+        return 'unknown'
     }
   }
 

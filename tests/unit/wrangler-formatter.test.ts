@@ -105,8 +105,7 @@ describe('wrangler-formatter', () => {
       expect(result).toContain('✅ Execution Successful');
       expect(result).toContain('Output:');
       expect(result).toContain('Test output');
-      expect(result).toContain('Execution Time: 100ms');
-      expect(result).toContain('MCP Calls Made: 2');
+      expect(result).toContain('2 MCP calls: 100ms'); // New format combines MCP calls and execution time
     });
 
     it('should format failed execution', () => {
@@ -142,7 +141,7 @@ describe('wrangler-formatter', () => {
       });
       
       expect(result).toContain('✅ Execution Successful');
-      expect(result).toContain('Execution Time: 150ms');
+      expect(result).toContain('1 MCP calls: 150ms'); // New format combines MCP calls and execution time
     });
 
     it('should pretty-print JSON output', () => {
@@ -177,10 +176,9 @@ describe('wrangler-formatter', () => {
       
       expect(result).toContain('✅ Execution Successful');
       expect(result).toContain('Output:');
-      // The nested JSON is pretty-printed within the text field (as a string)
-      // So we check for the escaped version that appears in the output
-      expect(result).toContain('\\"total_count\\"');
-      expect(result).toContain('\\"items\\"');
+      // The nested JSON is pretty-printed, so we check for unescaped quotes
+      expect(result).toContain('"total_count"');
+      expect(result).toContain('"items"');
     });
   });
 });

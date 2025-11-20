@@ -111,7 +111,8 @@ describe('MCP Lifecycle Integration', () => {
       
       // Code should use Service Binding (env.MCP.callTool) instead of fetch()
       expect(code).toContain('env.MCP.callTool');
-      expect(code).not.toContain('fetch'); // No fetch() calls for MCP tools
+      // Check that there are no fetch() calls for MCP tools (excluding the Worker export function)
+      expect(code).not.toMatch(/await\s+fetch\(|fetch\(['"`]/); // No actual fetch() calls for HTTP requests
       expect(workerCode.globalOutbound).toBeNull(); // True isolation enabled
     });
 

@@ -135,7 +135,8 @@ describe('Security: Code Isolation', () => {
       
       // Code should use Service Binding instead of fetch() for security
       expect(code).toContain('env.MCP.callTool');
-      expect(code).not.toContain('fetch'); // No fetch() calls - true isolation
+      // Check that there are no fetch() calls for MCP tools (excluding the Worker export function)
+      expect(code).not.toMatch(/await\s+fetch\(|fetch\(['"`]/); // No actual fetch() calls for HTTP requests - true isolation
       expect(workerCode.globalOutbound).toBeNull(); // Network isolation enabled
     });
   });

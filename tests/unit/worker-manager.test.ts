@@ -167,7 +167,8 @@ describe('WorkerManager', () => {
       expect(code).toContain('search_users');
       expect(code).toContain('get_user');
       expect(code).toContain('env.MCP.callTool'); // Uses Service Binding instead of fetch()
-      expect(code).not.toContain('fetch'); // No fetch() calls for MCP tools
+      // Check that there are no fetch() calls for MCP tools (excluding the Worker export function)
+      expect(code).not.toMatch(/await\s+fetch\(|fetch\(['"`]/); // No actual fetch() calls for HTTP requests
       expect(code).toContain('mcpBinding');
       expect(workerCode.globalOutbound).toBeNull(); // True isolation enabled
     });

@@ -5,8 +5,11 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
+  type ExecuteCodeRequest,
   ExecuteCodeRequestSchema,
+  type JSONSchemaProperty,
   LoadMCPRequestSchema,
+  type MCPConfig,
   type MCPTool,
 } from '../types/mcp.js'
 import { ConfigManager } from '../utils/config-manager.js'
@@ -64,7 +67,8 @@ export class MCPHandler {
                 mcp_config: {
                   type: 'object',
                   description:
-                    'MCP server connection configuration. Required if use_saved is false. Can use \\${VAR_NAME} syntax for environment variables.',
+                    'MCP server connection configuration. Required if use_saved is false. Can use $' +
+                    '{VAR_NAME} syntax for environment variables.',
                   properties: {
                     command: {
                       type: 'string',
@@ -79,7 +83,8 @@ export class MCPHandler {
                     env: {
                       type: 'object',
                       description:
-                        'Environment variables for the MCP server. Use \\${VAR_NAME} syntax to reference .env variables.',
+                        'Environment variables for the MCP server. Use $' +
+                        '{VAR_NAME} syntax to reference .env variables.',
                     },
                   },
                   required: ['command'],
@@ -257,7 +262,8 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                 mcp_config: {
                   type: 'object',
                   description:
-                    'MCP server configuration to save. Use \\${VAR_NAME} syntax for environment variables.',
+                    'MCP server configuration to save. Use $' +
+                    '{VAR_NAME} syntax for environment variables.',
                   properties: {
                     command: {
                       type: 'string',
@@ -271,7 +277,8 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                     env: {
                       type: 'object',
                       description:
-                        'Environment variables. Use \\${VAR_NAME} syntax to reference .env variables.',
+                        'Environment variables. Use $' +
+                        '{VAR_NAME} syntax to reference .env variables.',
                     },
                   },
                   required: ['command'],
@@ -362,7 +369,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
               404,
             )
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error({ error, tool: name }, 'Tool execution failed')
 
         if (error instanceof MCPIsolateError) {
@@ -390,6 +397,9 @@ The code runs in an isolated Worker environment with no network access. All MCP 
           }
         }
 
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error'
+        const errorStack = error instanceof Error ? error.stack : undefined
         return {
           content: [
             {
@@ -402,10 +412,10 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                     'Check logs for details. If the error persists, try reloading the MCP server.',
                   context: {
                     tool: name,
-                    original_error: error.message,
+                    original_error: errorMessage,
                   },
                   details: {
-                    stack: error.stack,
+                    stack: errorStack,
                   },
                 },
                 null,
@@ -419,10 +429,13 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     })
   }
 
-  private async handleLoadMCP(args: any) {
-    const { mcp_name, mcp_config, use_saved = false, auto_save = true } = args
-
-    if (!mcp_name || typeof mcp_name !== 'string') {
+  private async handleLoadMCP(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_name' in args) ||
+      typeof args.mcp_name !== 'string'
+    ) {
       throw new MCPIsolateError(
         'mcp_name is required and must be a string',
         'INVALID_INPUT',
@@ -430,7 +443,19 @@ The code runs in an isolated Worker environment with no network access. All MCP 
       )
     }
 
-    let configToUse: any
+    const {
+      mcp_name,
+      mcp_config,
+      use_saved = false,
+      auto_save = true,
+    } = args as {
+      mcp_name: string
+      mcp_config?: unknown
+      use_saved?: boolean
+      auto_save?: boolean
+    }
+
+    let configToUse: MCPConfig
 
     // Get config from saved configs if use_saved is true
     if (use_saved) {
@@ -460,8 +485,9 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
 
     // Resolve environment variables in config
-    const resolvedConfig =
-      this.configManager.resolveEnvVarsInObject(configToUse)
+    const resolvedConfig = this.configManager.resolveEnvVarsInObject(
+      configToUse,
+    ) as MCPConfig
 
     const startTime = Date.now()
     const instance = await this.workerManager.loadMCP(mcp_name, resolvedConfig)
@@ -473,7 +499,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     if (auto_save && !use_saved) {
       try {
         this.configManager.saveConfig(mcp_name, configToUse)
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn({ error, mcp_name }, 'Failed to auto-save MCP config')
       }
     }
@@ -508,25 +534,37 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
   }
 
-  private async handleExecuteCode(args: any) {
-    let validated: any
+  private async handleExecuteCode(args: unknown) {
+    let validated: ExecuteCodeRequest & { timeout_ms: number }
     try {
-      validated = validateInput(ExecuteCodeRequestSchema, args)
-    } catch (error: any) {
+      const result = validateInput(ExecuteCodeRequestSchema, args)
+      validated = {
+        ...result,
+        timeout_ms: result.timeout_ms ?? 30000,
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
+      const errorDetails =
+        error && typeof error === 'object' && 'errors' in error
+          ? (error as { errors?: unknown }).errors || error
+          : error
       throw new MCPIsolateError(
-        `Invalid input: ${error.message}`,
+        `Invalid input: ${errorMessage}`,
         'VALIDATION_ERROR',
         400,
-        { validation_errors: error.errors || error },
+        { validation_errors: errorDetails },
       )
     }
 
     // Validate code for security
     try {
       validateTypeScriptCode(validated.code)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
       throw new MCPIsolateError(
-        `Code validation failed: ${error.message}`,
+        `Code validation failed: ${errorMessage}`,
         'SECURITY_ERROR',
         403,
         { code_length: validated.code.length },
@@ -551,7 +589,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     const result = await this.workerManager.executeCode(
       validated.mcp_id,
       validated.code,
-      validated.timeout_ms,
+      validated.timeout_ms ?? 30000,
     )
 
     this.metricsCollector.recordExecution(
@@ -667,10 +705,23 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
   }
 
-  private async handleGetSchema(args: any) {
-    const { mcp_id } = args
+  private async handleGetSchema(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_id' in args) ||
+      typeof args.mcp_id !== 'string'
+    ) {
+      throw new MCPIsolateError(
+        'mcp_id is required and must be a string',
+        'INVALID_INPUT',
+        400,
+      )
+    }
 
-    if (!mcp_id || typeof mcp_id !== 'string') {
+    const { mcp_id } = args as { mcp_id: string }
+
+    if (!mcp_id) {
       throw new MCPIsolateError(
         'mcp_id is required and must be a string',
         'INVALID_INPUT',
@@ -710,10 +761,23 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
   }
 
-  private async handleGetMCPByName(args: any) {
-    const { mcp_name } = args
+  private async handleGetMCPByName(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_name' in args) ||
+      typeof args.mcp_name !== 'string'
+    ) {
+      throw new MCPIsolateError(
+        'mcp_name is required and must be a string',
+        'INVALID_INPUT',
+        400,
+      )
+    }
 
-    if (!mcp_name || typeof mcp_name !== 'string') {
+    const { mcp_name } = args as { mcp_name: string }
+
+    if (!mcp_name) {
       throw new MCPIsolateError(
         'mcp_name is required and must be a string',
         'INVALID_INPUT',
@@ -753,10 +817,26 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
   }
 
-  private async handleUnloadMCP(args: any) {
-    const { mcp_id, remove_from_saved = false } = args
+  private async handleUnloadMCP(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_id' in args) ||
+      typeof args.mcp_id !== 'string'
+    ) {
+      throw new MCPIsolateError(
+        'mcp_id is required and must be a string',
+        'INVALID_INPUT',
+        400,
+      )
+    }
 
-    if (!mcp_id || typeof mcp_id !== 'string') {
+    const { mcp_id, remove_from_saved = false } = args as {
+      mcp_id: string
+      remove_from_saved?: boolean
+    }
+
+    if (!mcp_id) {
       throw new MCPIsolateError(
         'mcp_id is required and must be a string',
         'INVALID_INPUT',
@@ -775,7 +855,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     if (remove_from_saved && mcpName) {
       try {
         configRemoved = this.configManager.deleteConfig(mcpName)
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn(
           { error, mcpName },
           'Failed to remove config from IDE config file',
@@ -840,15 +920,15 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     const toolName = firstTool.name
     const params = firstTool.inputSchema.properties || {}
     const paramKeys = Object.keys(params).slice(0, 2) // Use first 2 params as example
-    const exampleParams: Record<string, any> = {}
+    const exampleParams: Record<string, unknown> = {}
 
     paramKeys.forEach((key: string) => {
-      const schema = params[key]
-      if (schema.type === 'string') {
+      const schema = params[key] as JSONSchemaProperty
+      if (schema?.type === 'string') {
         exampleParams[key] = 'example_value'
-      } else if (schema.type === 'number') {
+      } else if (schema?.type === 'number') {
         exampleParams[key] = 1
-      } else if (schema.type === 'boolean') {
+      } else if (schema?.type === 'boolean') {
         exampleParams[key] = true
       }
     })
@@ -876,17 +956,17 @@ Available tools: ${tools.map((t) => t.name).join(', ')}`
       required.length > 0
         ? required.slice(0, 2)
         : Object.keys(params).slice(0, 2)
-    const exampleParams: Record<string, any> = {}
+    const exampleParams: Record<string, unknown> = {}
 
     paramKeys.forEach((key) => {
-      const schema = params[key]
-      if (schema.type === 'string') {
+      const schema = params[key] as JSONSchemaProperty
+      if (schema?.type === 'string') {
         exampleParams[key] = schema.description?.toLowerCase().includes('query')
           ? 'typescript'
           : 'example'
-      } else if (schema.type === 'number') {
+      } else if (schema?.type === 'number') {
         exampleParams[key] = 1
-      } else if (schema.type === 'boolean') {
+      } else if (schema?.type === 'boolean') {
         exampleParams[key] = true
       }
     })
@@ -949,10 +1029,26 @@ console.log(JSON.stringify(result, null, 2));`
     }
   }
 
-  private async handleSaveConfig(args: any) {
-    const { mcp_name, mcp_config } = args
+  private async handleSaveConfig(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_name' in args) ||
+      typeof args.mcp_name !== 'string'
+    ) {
+      throw new MCPIsolateError(
+        'mcp_name is required and must be a string',
+        'INVALID_INPUT',
+        400,
+      )
+    }
 
-    if (!mcp_name || typeof mcp_name !== 'string') {
+    const { mcp_name, mcp_config } = args as {
+      mcp_name: string
+      mcp_config?: unknown
+    }
+
+    if (!mcp_name) {
       throw new MCPIsolateError(
         'mcp_name is required and must be a string',
         'INVALID_INPUT',
@@ -969,15 +1065,22 @@ console.log(JSON.stringify(result, null, 2));`
     }
 
     // Validate config structure
-    if (!mcp_config.command) {
+    const config = mcp_config as Record<string, unknown>
+    if (!config.command || typeof config.command !== 'string') {
       throw new MCPIsolateError(
-        'mcp_config.command is required',
+        'mcp_config.command is required and must be a string',
         'INVALID_INPUT',
         400,
       )
     }
 
-    this.configManager.saveConfig(mcp_name, mcp_config)
+    // Validate and convert to MCPConfig
+    const validatedConfig = validateInput(LoadMCPRequestSchema, {
+      mcp_name,
+      mcp_config,
+    }).mcp_config
+
+    this.configManager.saveConfig(mcp_name, validatedConfig)
 
     return {
       content: [
@@ -997,10 +1100,23 @@ console.log(JSON.stringify(result, null, 2));`
     }
   }
 
-  private async handleDeleteConfig(args: any) {
-    const { mcp_name } = args
+  private async handleDeleteConfig(args: unknown) {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      !('mcp_name' in args) ||
+      typeof args.mcp_name !== 'string'
+    ) {
+      throw new MCPIsolateError(
+        'mcp_name is required and must be a string',
+        'INVALID_INPUT',
+        400,
+      )
+    }
 
-    if (!mcp_name || typeof mcp_name !== 'string') {
+    const { mcp_name } = args as { mcp_name: string }
+
+    if (!mcp_name) {
       throw new MCPIsolateError(
         'mcp_name is required and must be a string',
         'INVALID_INPUT',
@@ -1037,8 +1153,12 @@ console.log(JSON.stringify(result, null, 2));`
     }
   }
 
-  private async handleImportCursorConfigs(args: any) {
-    const { cursor_config_path } = args || {}
+  private async handleImportCursorConfigs(args: unknown) {
+    const typedArgs =
+      args && typeof args === 'object' && 'cursor_config_path' in args
+        ? (args as { cursor_config_path?: string })
+        : {}
+    const { cursor_config_path } = typedArgs
 
     const result = this.configManager.importConfigs(cursor_config_path)
     const configPath = this.configManager.getCursorConfigPath()
@@ -1073,19 +1193,19 @@ console.log(JSON.stringify(result, null, 2));`
     // Graceful shutdown handler
     const shutdown = async () => {
       logger.info('Shutting down gracefully...')
-      
+
       try {
         // Close MCP server
         await Promise.race([
           this.server.close(),
           new Promise<void>((resolve) => setTimeout(resolve, 2000)),
         ])
-        
+
         // Clean up WorkerManager resources
         await this.workerManager.shutdown()
-        
+
         logger.info('Shutdown complete')
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error({ error }, 'Error during shutdown')
       } finally {
         process.exit(0)

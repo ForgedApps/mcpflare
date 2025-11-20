@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, type SpawnOptions, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   createServer,
@@ -8,7 +8,12 @@ import {
 } from 'node:http'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import type { MCPConfig, MCPInstance, MCPTool } from '../types/mcp.js'
+import type {
+  JSONSchemaProperty,
+  MCPConfig,
+  MCPInstance,
+  MCPTool,
+} from '../types/mcp.js'
 import type { WorkerCode } from '../types/worker.js'
 import { MCPConnectionError, WorkerError } from '../utils/errors.js'
 import logger from '../utils/logger.js'
@@ -24,6 +29,57 @@ interface CachedMCPSchema {
   typescriptApi: string
   configHash: string // Hash of the config to detect changes
   cachedAt: Date
+}
+
+/**
+ * Execution result from Worker isolate
+ */
+interface ExecutionResult {
+  success: boolean
+  output?: string
+  result?: unknown
+  error?: string
+  execution_time_ms: number
+  metrics?: {
+    mcp_calls_made?: number
+    tools_called?: string[]
+    schema_efficiency?: {
+      total_tools_available: number
+      tools_used: string[]
+      schema_size_total_chars: number
+      schema_size_used_chars: number
+      schema_utilization_percent: number
+      schema_efficiency_ratio: number
+      estimated_tokens_saved?: number
+    }
+    security?: {
+      network_isolation_enabled: boolean
+      process_isolation_enabled: boolean
+      isolation_type: string
+      sandbox_status: string
+      security_level: string
+      protection_summary?: string[]
+    }
+  }
+}
+
+// Note: Client._transport is private, so we use type assertions through unknown
+// when accessing it
+
+/**
+ * Error with build error flag
+ */
+interface BuildError extends Error {
+  isBuildError?: boolean
+}
+
+/**
+ * Context for error formatting
+ */
+interface ErrorContext {
+  mcpId: string
+  port: number
+  userCode?: string
 }
 
 export class WorkerManager {
@@ -108,17 +164,20 @@ export class WorkerManager {
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ success: true, result }))
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error'
+          const errorStack = error instanceof Error ? error.stack : undefined
           logger.error(
-            { error: error.message, stack: error.stack },
+            { error: errorMessage, stack: errorStack },
             'RPC: Error calling MCP tool',
           )
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(
             JSON.stringify({
               success: false,
-              error: error.message,
-              stack: error.stack,
+              error: errorMessage,
+              stack: errorStack,
             }),
           )
         }
@@ -258,6 +317,7 @@ export class WorkerManager {
     network_isolation_enabled: boolean
     process_isolation_enabled: boolean
     isolation_type: string
+    sandbox_status: string
     security_level: string
     protection_summary: string[]
   } {
@@ -281,6 +341,7 @@ export class WorkerManager {
       network_isolation_enabled: networkIsolationEnabled,
       process_isolation_enabled: processIsolationEnabled,
       isolation_type: isolationType,
+      sandbox_status: 'active',
       security_level: securityLevel,
       protection_summary: protectionSummary,
     }
@@ -367,7 +428,9 @@ export class WorkerManager {
       )
 
       return instance
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
       logger.error({ error, mcpId, mcpName }, 'Failed to load MCP server')
 
       // Cleanup on failure
@@ -378,7 +441,7 @@ export class WorkerManager {
       }
 
       throw new MCPConnectionError(
-        `Failed to load MCP server: ${error.message}`,
+        `Failed to load MCP server: ${errorMessage}`,
         { mcpName, error },
       )
     }
@@ -391,7 +454,7 @@ export class WorkerManager {
     mcpId: string,
     code: string,
     timeoutMs: number = 30000,
-  ): Promise<any> {
+  ): Promise<ExecutionResult> {
     const instance = this.instances.get(mcpId)
 
     if (!instance) {
@@ -441,7 +504,7 @@ export class WorkerManager {
           security,
         },
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       const executionTime = Date.now() - startTime
 
       logger.error({ error, mcpId, executionTime }, 'Code execution failed')
@@ -450,9 +513,11 @@ export class WorkerManager {
       const schemaEfficiency = this.calculateSchemaMetrics(instance.tools, [])
       const security = this.getSecurityMetrics()
 
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
       return {
         success: false,
-        error: error.message,
+        error: errorMessage,
         execution_time_ms: executionTime,
         metrics: {
           mcp_calls_made: 0,
@@ -480,11 +545,15 @@ export class WorkerManager {
     if (client) {
       try {
         // Get transport from client and close it
-        const transport = (client as any)._transport
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const clientWithTransport = client as unknown as {
+          _transport?: { close?: () => Promise<void> }
+        }
+        const transport = clientWithTransport._transport
         if (transport && typeof transport.close === 'function') {
           await transport.close()
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn({ error, mcpId }, 'Error closing MCP client transport')
       }
       this.mcpClients.delete(mcpId)
@@ -568,7 +637,7 @@ export class WorkerManager {
 
       try {
         // On Windows, .cmd files need shell: true to execute properly
-        const spawnOptions: any = {
+        const spawnOptions: SpawnOptions = {
           env: { ...process.env, ...config.env },
           stdio: ['pipe', 'pipe', 'pipe'],
         }
@@ -632,12 +701,13 @@ export class WorkerManager {
         }
 
         mcpProcess.on('error', (error: Error) => {
+          const errnoError = error as NodeJS.ErrnoException
           logger.error(
             {
-              error: error.message,
-              code: (error as any).code,
-              errno: (error as any).errno,
-              syscall: (error as any).syscall,
+              error: error instanceof Error ? error.message : String(error),
+              code: errnoError.code,
+              errno: errnoError.errno,
+              syscall: errnoError.syscall,
               command,
               args,
             },
@@ -673,13 +743,18 @@ export class WorkerManager {
             }
           }
         }, 2000) // Reduced to 2s since we can use cached schemas
-      } catch (spawnError: any) {
+      } catch (spawnError: unknown) {
+        const errorMessage =
+          spawnError instanceof Error ? spawnError.message : 'Unknown error'
+        const errorCode = (spawnError as NodeJS.ErrnoException)?.code
+        const errorErrno = (spawnError as NodeJS.ErrnoException)?.errno
+        const errorSyscall = (spawnError as NodeJS.ErrnoException)?.syscall
         logger.error(
           {
-            error: spawnError.message,
-            code: spawnError.code,
-            errno: spawnError.errno,
-            syscall: spawnError.syscall,
+            error: errorMessage,
+            code: errorCode,
+            errno: errorErrno,
+            syscall: errorSyscall,
             command,
             args,
           },
@@ -687,7 +762,7 @@ export class WorkerManager {
         )
         reject(
           new MCPConnectionError(
-            `Failed to spawn MCP process: ${spawnError.message}`,
+            `Failed to spawn MCP process: ${errorMessage}`,
           ),
         )
       }
@@ -733,7 +808,11 @@ export class WorkerManager {
       this.mcpClients.set(mcpId, client)
 
       // Get the actual process from the transport
-      const process = (transport as any)._process
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transportWithProcess = transport as unknown as {
+        _process?: ChildProcess
+      }
+      const process = transportWithProcess._process
       if (process) {
         // Update our process map with the actual process
         this.mcpProcesses.set(mcpId, process)
@@ -760,16 +839,21 @@ export class WorkerManager {
         description: tool.description,
         inputSchema: {
           type: 'object' as const,
-          properties: tool.inputSchema.properties || {},
+          properties: (tool.inputSchema.properties || {}) as Record<
+            string,
+            JSONSchemaProperty
+          >,
           required: tool.inputSchema.required || [],
         },
       }))
 
       return tools
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
       logger.error({ error, mcpId, mcpName }, 'Failed to fetch MCP schema')
       throw new MCPConnectionError(
-        `Failed to fetch MCP schema: ${error.message}`,
+        `Failed to fetch MCP schema: ${errorMessage}`,
         { mcpName, error },
       )
     }
@@ -936,7 +1020,11 @@ ${mcpBindingStubs}
     code: string,
     timeoutMs: number,
     instance: MCPInstance,
-  ): Promise<any> {
+  ): Promise<{
+    output: string
+    result?: unknown
+    metrics?: ExecutionResult['metrics']
+  }> {
     // If we've already determined Wrangler is unavailable, throw error immediately
     if (this.wranglerAvailable === false) {
       throw new WorkerError(
@@ -951,22 +1039,24 @@ ${mcpBindingStubs}
     // Wrangler provides the actual Cloudflare Worker isolation environment
     try {
       return await this.executeWithWrangler(mcpId, code, timeoutMs, instance)
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Check if this is a "Wrangler not found" error
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      const errorCode = (error as NodeJS.ErrnoException)?.code
       const isWranglerNotFound =
-        error.message?.includes('spawn') ||
-        error.message?.includes('ENOENT') ||
-        error.message?.includes('not found') ||
-        error.code === 'ENOENT' ||
-        (error.message?.includes('wrangler') &&
-          error.message?.includes('command'))
+        errorMessage.includes('spawn') ||
+        errorMessage.includes('ENOENT') ||
+        errorMessage.includes('not found') ||
+        errorCode === 'ENOENT' ||
+        (errorMessage.includes('wrangler') && errorMessage.includes('command'))
 
       // If Wrangler is not available, mark it as unavailable and throw error
       // We don't simulate execution - Wrangler is required for proper isolation
       if (isWranglerNotFound && this.wranglerAvailable === null) {
         this.wranglerAvailable = false
         logger.error(
-          { mcpId, error: error.message },
+          { mcpId, error: errorMessage },
           'Wrangler is required but not available',
         )
         throw new WorkerError(
@@ -989,7 +1079,11 @@ ${mcpBindingStubs}
     code: string,
     timeoutMs: number,
     instance: MCPInstance,
-  ): Promise<any> {
+  ): Promise<{
+    output: string
+    result?: unknown
+    metrics?: ExecutionResult['metrics']
+  }> {
     // Initialize progress indicator (declare outside try for catch access)
     const progress = new ProgressIndicator()
     const isCLIMode = process.env.CLI_MODE === 'true'
@@ -1099,13 +1193,18 @@ ${mcpBindingStubs}
             } else if (checkCount < maxChecks) {
               setTimeout(checkReady, 200)
             }
-          } catch (error: any) {
-            if (checkCount < maxChecks && !error.name?.includes('AbortError')) {
+          } catch (error: unknown) {
+            if (
+              checkCount < maxChecks &&
+              !(error instanceof Error && error.name?.includes('AbortError'))
+            ) {
               setTimeout(checkReady, 200)
             } else if (checkCount >= maxChecks) {
               clearTimeout(timeout)
+              const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
               const healthCheckError = new Error(
-                `Wrangler health check failed after ${maxChecks} attempts. Last error: ${error.message}`,
+                `Wrangler health check failed after ${maxChecks} attempts. Last error: ${errorMessage}`,
               )
               reject(healthCheckError)
             }
@@ -1159,13 +1258,14 @@ ${mcpBindingStubs}
                     .find((line) => line.includes('worker_loaders')) ||
                   'Unknown error',
               )
-              ;(error as any).isBuildError = true
-              reject(error)
+              const buildError = error as BuildError
+              buildError.isBuildError = true
+              reject(buildError)
             } else if (hasBuildError) {
               const error = new Error(
                 'TypeScript compilation failed. Check the error details below.',
-              )
-              ;(error as any).isBuildError = true
+              ) as BuildError
+              error.isBuildError = true
               reject(error)
             } else {
               const error = new Error(
@@ -1217,7 +1317,7 @@ ${mcpBindingStubs}
       const result = (await response.json()) as {
         success: boolean
         output?: string
-        result?: any
+        result?: unknown
         error?: string
         metrics?: {
           mcp_calls_made: number
@@ -1258,42 +1358,45 @@ ${mcpBindingStubs}
           mcp_calls_made: 0,
         },
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Determine which step failed
       let failedStep = -1
       const isCLIMode = process.env.CLI_MODE === 'true'
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      const errorIsBuildError =
+        (error as { isBuildError?: boolean })?.isBuildError === true
 
       if (isCLIMode) {
         // Check for build/compilation errors first (these happen during Wrangler phase)
         const hasWorkerLoadersError =
           (wranglerStderr?.includes('worker_loaders') ||
             wranglerStdout?.includes('worker_loaders') ||
-            error.message?.includes('worker_loaders')) ??
+            errorMessage.includes('worker_loaders')) ??
           false
         const hasBuildError =
           wranglerStderr.includes('Build failed') ||
           wranglerStderr.includes('build failed') ||
           wranglerStderr.includes('✗ Build failed') ||
-          error.message.includes('TypeScript compilation failed') ||
-          error.message.includes('compilation failed') ||
-          error.isBuildError === true
+          errorMessage.includes('TypeScript compilation failed') ||
+          errorMessage.includes('compilation failed') ||
+          errorIsBuildError
 
         // Check error message to determine failure point
         if (
           hasWorkerLoadersError ||
           hasBuildError ||
-          error.message.includes('Wrangler process') ||
-          error.message.includes('Wrangler dev server') ||
-          error.message.includes('health check') ||
-          error.message.includes('Wrangler process exited')
+          errorMessage.includes('Wrangler process') ||
+          errorMessage.includes('Wrangler dev server') ||
+          errorMessage.includes('health check') ||
+          errorMessage.includes('Wrangler process exited')
         ) {
           failedStep = 1 // Wrangler failed (build or startup)
           progress.updateStep(1, 'failed')
         } else if (
-          error.message.includes('Worker execution failed') ||
-          error.message.includes('execute') ||
-          (error.message.includes('fetch') &&
-            error.message.includes('localhost'))
+          errorMessage.includes('Worker execution failed') ||
+          errorMessage.includes('execute') ||
+          (errorMessage.includes('fetch') && errorMessage.includes('localhost'))
         ) {
           failedStep = 2 // Target MCP execution failed
           progress.updateStep(2, 'failed')
@@ -1306,7 +1409,7 @@ ${mcpBindingStubs}
 
       // Format and display the error nicely
       // Include user code in context for build errors to help with troubleshooting
-      const context: any = {
+      const context: ErrorContext = {
         mcpId,
         port,
       }
@@ -1326,7 +1429,7 @@ ${mcpBindingStubs}
       console.error(
         '\n' +
           formatWranglerError(
-            error,
+            error instanceof Error ? error : new Error(String(error)),
             wranglerStdout || '',
             wranglerStderr || '',
             context,
@@ -1339,10 +1442,12 @@ ${mcpBindingStubs}
       const isVerbose =
         process.argv.includes('--verbose') || process.argv.includes('-v')
       if (!isCLIMode || isVerbose) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        const errorStack = error instanceof Error ? error.stack : undefined
         logger.error(
           {
-            error: error.message,
-            stack: error.stack,
+            error: errorMsg,
+            stack: errorStack,
             mcpId,
             port,
           },
@@ -1368,7 +1473,7 @@ ${mcpBindingStubs}
         })
       }
 
-      throw new WorkerError(`Wrangler execution failed: ${error.message}`)
+      throw new WorkerError(`Wrangler execution failed: ${errorMessage}`)
     }
   }
 
@@ -1400,11 +1505,15 @@ ${mcpBindingStubs}
       cleanupPromises.push(
         (async () => {
           try {
-            const transport = (client as any)._transport
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const clientWithTransport = client as unknown as {
+              _transport?: { close?: () => Promise<void> }
+            }
+            const transport = clientWithTransport._transport
             if (transport && typeof transport.close === 'function') {
               await transport.close()
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
             logger.warn({ error, mcpId }, 'Error closing MCP client')
           }
         })(),
@@ -1427,7 +1536,7 @@ ${mcpBindingStubs}
                 resolve()
               }, 1000)
             })
-          } catch (error: any) {
+          } catch (error: unknown) {
             logger.warn({ error, mcpId }, 'Error killing MCP process')
           }
         })(),

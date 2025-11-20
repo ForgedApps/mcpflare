@@ -357,7 +357,7 @@ export class ConfigManager {
    * Recursively resolve environment variables in an object
    * Public method for resolving env vars in MCP configs
    */
-  resolveEnvVarsInObject(obj: any): any {
+  resolveEnvVarsInObject(obj: unknown): unknown {
     if (typeof obj === 'string') {
       return this.resolveEnvVars(obj)
     }
@@ -367,7 +367,7 @@ export class ConfigManager {
     }
 
     if (obj && typeof obj === 'object') {
-      const resolved: any = {}
+      const resolved: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(obj)) {
         resolved[key] = this.resolveEnvVarsInObject(value)
       }
@@ -400,7 +400,7 @@ export class ConfigManager {
       }
 
       return config
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ error, filePath }, 'Failed to read config file')
       return null
     }
@@ -422,7 +422,7 @@ export class ConfigManager {
       writeFileSync(filePath, content, 'utf-8')
 
       // Logging is handled by the caller (saveConfig, deleteConfig, etc.)
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ error, filePath }, 'Failed to write config file')
       throw error
     }

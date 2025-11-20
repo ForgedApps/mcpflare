@@ -264,7 +264,7 @@ describe('SchemaConverter', () => {
 
       const result = converter.convertToTypeScript(tools);
 
-      expect(result).toContain('data?: any');
+      expect(result).toContain('data?: unknown'); // SchemaConverter uses 'unknown' for schemas without type (more type-safe than 'any')
     });
   });
 });
