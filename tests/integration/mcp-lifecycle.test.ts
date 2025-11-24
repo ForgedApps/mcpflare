@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
-import { WorkerManager } from '../../src/server/worker-manager.js';
-import { MCPConfig } from '../../src/types/mcp.js';
-import { testConfigCleanup, trackWorkerManager } from '../helpers/config-cleanup.js';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { WorkerManager } from '../../src/server/worker-manager.js'
+import {
+  testConfigCleanup,
+  trackWorkerManager,
+} from '../helpers/config-cleanup.js'
 
 // Mock logger
 vi.mock('../../src/utils/logger.js', () => ({
@@ -12,58 +22,64 @@ vi.mock('../../src/utils/logger.js', () => ({
     error: vi.fn(),
     level: 'info',
   },
-}));
+}))
 
 describe('MCP Lifecycle Integration', () => {
-  let manager: WorkerManager;
+  let manager: WorkerManager
 
   beforeEach(() => {
-    manager = new WorkerManager();
+    manager = new WorkerManager()
     // Track manager for global cleanup
-    trackWorkerManager(manager);
-  });
+    trackWorkerManager(manager)
+  })
 
   afterEach(async () => {
     // Clean up any loaded instances and wait for processes to terminate
-    const instances = manager.listInstances();
+    const instances = manager.listInstances()
     for (const instance of instances) {
       try {
         // Track config names for cleanup
-        testConfigCleanup.trackConfig(instance.mcp_name);
-        await manager.unloadMCP(instance.mcp_id);
-      } catch (error) {
+        testConfigCleanup.trackConfig(instance.mcp_name)
+        await manager.unloadMCP(instance.mcp_id)
+      } catch {
         // Ignore cleanup errors
       }
     }
-    
+
     // Give processes time to fully terminate
-    await new Promise(resolve => setTimeout(resolve, 100));
-  });
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  })
 
   afterAll(() => {
     // Clean up any MCP configs that were saved during tests
-    testConfigCleanup.cleanup();
-  });
+    testConfigCleanup.cleanup()
+  })
 
   describe('RPC Server', () => {
     it('should start RPC server on initialization', async () => {
-      const getRPCUrl = (manager as any).getRPCUrl.bind(manager);
-      const url = await getRPCUrl();
-      
-      expect(url).toBeDefined();
-      expect(url).toContain('http://127.0.0.1');
-      expect(url).toContain('/mcp-rpc');
-      expect(url).toMatch(/http:\/\/127\.0\.0\.1:\d+\/mcp-rpc/);
-    });
+      // Access private method for testing
+      const getRPCUrl = (
+        manager as unknown as { getRPCUrl: () => Promise<string> }
+      ).getRPCUrl.bind(manager)
+      const url = await getRPCUrl()
+
+      expect(url).toBeDefined()
+      expect(url).toContain('http://127.0.0.1')
+      expect(url).toContain('/mcp-rpc')
+      expect(url).toMatch(/http:\/\/127\.0\.0\.1:\d+\/mcp-rpc/)
+    })
 
     it('should return consistent RPC URL', async () => {
-      const getRPCUrl = (manager as any).getRPCUrl.bind(manager);
-      const url1 = await getRPCUrl();
-      const url2 = await getRPCUrl();
-      
-      expect(url1).toBe(url2);
-    });
-  });
+      // Access private method for testing
+      const getRPCUrl = (
+        manager as unknown as { getRPCUrl: () => Promise<string> }
+      ).getRPCUrl.bind(manager)
+      const url1 = await getRPCUrl()
+      const url2 = await getRPCUrl()
+
+      expect(url1).toBe(url2)
+    })
+  })
 
   describe('Worker Code Generation', () => {
     it('should generate valid worker code structure', async () => {
@@ -79,26 +95,36 @@ describe('MCP Lifecycle Integration', () => {
             required: ['param'],
           },
         },
-      ];
+      ]
 
-      const generateCode = (manager as any).generateWorkerCode.bind(manager);
+      // Access private method for testing
+      const generateCode = (
+        manager as unknown as {
+          generateWorkerCode: (
+            id: string,
+            tools: unknown[],
+            typescriptApi: string,
+            userCode: string,
+          ) => Promise<unknown>
+        }
+      ).generateWorkerCode.bind(manager)
       const workerCode = await generateCode(
         'test-id',
         tools,
         '',
-        'console.log("test");'
-      );
+        'console.log("test");',
+      )
 
-      expect(workerCode).toBeDefined();
-      expect(workerCode.compatibilityDate).toBe('2025-06-01');
-      expect(workerCode.mainModule).toBe('worker.js');
-      expect(workerCode.modules['worker.js']).toBeDefined();
-      expect(typeof workerCode.modules['worker.js']).toBe('string');
-      expect(workerCode.env).toBeDefined();
-      expect(workerCode.env.MCP_ID).toBe('test-id');
-      expect(workerCode.env.MCP_RPC_URL).toBeDefined(); // Used by parent Worker to create Service Binding
-      expect(workerCode.globalOutbound).toBeNull(); // True isolation enabled
-    });
+      expect(workerCode).toBeDefined()
+      expect(workerCode.compatibilityDate).toBe('2025-06-01')
+      expect(workerCode.mainModule).toBe('worker.js')
+      expect(workerCode.modules['worker.js']).toBeDefined()
+      expect(typeof workerCode.modules['worker.js']).toBe('string')
+      expect(workerCode.env).toBeDefined()
+      expect(workerCode.env.MCP_ID).toBe('test-id')
+      expect(workerCode.env.MCP_RPC_URL).toBeDefined() // Used by parent Worker to create Service Binding
+      expect(workerCode.globalOutbound).toBeNull() // True isolation enabled
+    })
 
     it('should use Service Binding in generated code when tools exist', async () => {
       const tools = [
@@ -111,23 +137,33 @@ describe('MCP Lifecycle Integration', () => {
             required: [],
           },
         },
-      ];
-      const generateCode = (manager as any).generateWorkerCode.bind(manager);
+      ]
+      // Access private method for testing
+      const generateCode = (
+        manager as unknown as {
+          generateWorkerCode: (
+            id: string,
+            tools: unknown[],
+            typescriptApi: string,
+            userCode: string,
+          ) => Promise<unknown>
+        }
+      ).generateWorkerCode.bind(manager)
       const workerCode = await generateCode(
         'test-id',
         tools,
         '',
-        'console.log("test");'
-      );
+        'console.log("test");',
+      )
 
-      const code = workerCode.modules['worker.js'] as string;
-      
+      const code = workerCode.modules['worker.js'] as string
+
       // Code should use Service Binding (env.MCP.callTool) instead of fetch()
-      expect(code).toContain('env.MCP.callTool');
+      expect(code).toContain('env.MCP.callTool')
       // Check that there are no fetch() calls for MCP tools (excluding the Worker export function)
-      expect(code).not.toMatch(/await\s+fetch\(|fetch\(['"`]/); // No actual fetch() calls for HTTP requests
-      expect(workerCode.globalOutbound).toBeNull(); // True isolation enabled
-    });
+      expect(code).not.toMatch(/await\s+fetch\(|fetch\(['"`]/) // No actual fetch() calls for HTTP requests
+      expect(workerCode.globalOutbound).toBeNull() // True isolation enabled
+    })
 
     it('should generate code with multiple tools', async () => {
       const tools = [
@@ -149,51 +185,58 @@ describe('MCP Lifecycle Integration', () => {
             required: [],
           },
         },
-      ];
+      ]
 
-      const generateCode = (manager as any).generateWorkerCode.bind(manager);
+      // Access private method for testing
+      const generateCode = (
+        manager as unknown as {
+          generateWorkerCode: (
+            id: string,
+            tools: unknown[],
+            typescriptApi: string,
+            userCode: string,
+          ) => Promise<unknown>
+        }
+      ).generateWorkerCode.bind(manager)
       const workerCode = await generateCode(
         'test-id',
         tools,
         '',
-        'console.log("test");'
-      );
+        'console.log("test");',
+      )
 
-      const code = workerCode.modules['worker.js'] as string;
-      expect(code).toContain('tool1');
-      expect(code).toContain('tool2');
-    });
-  });
+      const code = workerCode.modules['worker.js'] as string
+      expect(code).toContain('tool1')
+      expect(code).toContain('tool2')
+    })
+  })
 
   describe('Instance Management', () => {
     it('should list instances correctly', () => {
-      const instances = manager.listInstances();
-      expect(Array.isArray(instances)).toBe(true);
-    });
+      const instances = manager.listInstances()
+      expect(Array.isArray(instances)).toBe(true)
+    })
 
     it('should return undefined for non-existent instance', () => {
-      const instance = manager.getInstance('non-existent');
-      expect(instance).toBeUndefined();
-    });
+      const instance = manager.getInstance('non-existent')
+      expect(instance).toBeUndefined()
+    })
 
     it('should return undefined for non-existent MCP name', () => {
-      const instance = manager.getMCPByName('non-existent');
-      expect(instance).toBeUndefined();
-    });
-  });
+      const instance = manager.getMCPByName('non-existent')
+      expect(instance).toBeUndefined()
+    })
+  })
 
   describe('Error Handling', () => {
     it('should throw WorkerError for non-existent MCP in executeCode', async () => {
       await expect(
-        manager.executeCode('non-existent-id', 'console.log("test");')
-      ).rejects.toThrow();
-    });
+        manager.executeCode('non-existent-id', 'console.log("test");'),
+      ).rejects.toThrow()
+    })
 
     it('should throw WorkerError for non-existent MCP in unloadMCP', async () => {
-      await expect(
-        manager.unloadMCP('non-existent-id')
-      ).rejects.toThrow();
-    });
-  });
-});
-
+      await expect(manager.unloadMCP('non-existent-id')).rejects.toThrow()
+    })
+  })
+})
