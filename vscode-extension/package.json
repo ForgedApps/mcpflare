@@ -1,0 +1,86 @@
+{
+  "name": "mcpguard",
+  "displayName": "MCP Guard",
+  "description": "Secure isolation for MCP servers with configurable network and file system access controls",
+  "version": "0.1.0",
+  "publisher": "forgedapps",
+  "author": {
+    "name": "James Gentes",
+    "email": "jgentes@gmail.com"
+  },
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension/index.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mcpguard",
+          "title": "MCP Guard",
+          "icon": "media/shield.svg"
+        }
+      ]
+    },
+    "views": {
+      "mcpguard": [
+        {
+          "type": "webview",
+          "id": "mcpguard.configPanel",
+          "name": "Configuration"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "mcpguard.openSettings",
+        "title": "Open MCP Guard Settings",
+        "category": "MCP Guard"
+      },
+      {
+        "command": "mcpguard.refreshMCPs",
+        "title": "Refresh MCP List",
+        "category": "MCP Guard"
+      },
+      {
+        "command": "mcpguard.importFromIDE",
+        "title": "Import MCPs from IDE Config",
+        "category": "MCP Guard"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:extension && npm run build:webview",
+    "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension/index.js --external:vscode --format=cjs --platform=node",
+    "build:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts",
+    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:webview\"",
+    "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension/index.js --external:vscode --format=cjs --platform=node --watch",
+    "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts --watch",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --apply src/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.85.0",
+    "@types/vscode-webview": "^1.57.0",
+    "concurrently": "^8.2.0",
+    "esbuild": "^0.20.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
