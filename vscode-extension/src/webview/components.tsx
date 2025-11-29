@@ -1,5 +1,10 @@
 /**
  * React components for the MCP Guard webview UI
+ * 
+ * UI Component Guidelines:
+ * - Use shadcn/ui-style components for consistency
+ * - Switch component should be used for binary toggles (not custom toggle implementations)
+ * - All UI components should follow shadcn design patterns when possible
  */
 
 import React, { useState, useCallback } from 'react';
@@ -143,6 +148,68 @@ export const ShieldOffIcon: React.FC<IconProps> = ({ size = 20, className }) => 
 // UI Components
 // ====================
 
+// ====================
+// Switch Component (shadcn-style)
+// ====================
+
+interface SwitchProps {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+/**
+ * Switch component styled after shadcn/ui Switch
+ * Uses consistent styling and proper alignment
+ */
+export const Switch: React.FC<SwitchProps> = ({ checked, onCheckedChange, disabled = false, className }) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onCheckedChange(!checked)}
+      style={{
+        width: '44px',
+        height: '24px',
+        borderRadius: '12px',
+        border: 'none',
+        background: checked ? '#22c55e' : '#3f3f46',
+        position: 'relative',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background 0.2s ease',
+        padding: 0,
+        outline: 'none',
+      }}
+      className={className}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+          e.preventDefault();
+          onCheckedChange(!checked);
+        }
+      }}
+    >
+      <span
+        style={{
+          display: 'block',
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          background: 'white',
+          position: 'absolute',
+          top: '2px',
+          left: checked ? '22px' : '2px',
+          transition: 'left 0.2s ease',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+        }}
+      />
+    </button>
+  );
+};
+
 interface ToggleProps {
   enabled: boolean;
   onChange: (enabled: boolean) => void;
@@ -152,31 +219,7 @@ interface ToggleProps {
 
 export const Toggle: React.FC<ToggleProps> = ({ enabled, onChange, label, description }) => (
   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }} onClick={() => onChange(!enabled)}>
-    <div
-      style={{
-        width: '40px',
-        height: '22px',
-        borderRadius: '11px',
-        background: enabled ? '#22c55e' : 'var(--bg-hover)',
-        position: 'relative',
-        transition: 'background 0.2s ease',
-        flexShrink: 0,
-        marginTop: '2px',
-      }}
-    >
-      <div
-        style={{
-          width: '18px',
-          height: '18px',
-          borderRadius: '50%',
-          background: enabled ? 'white' : 'var(--text-muted)',
-          position: 'absolute',
-          top: '2px',
-          left: enabled ? '20px' : '2px',
-          transition: 'all 0.2s ease',
-        }}
-      />
-    </div>
+    <Switch checked={enabled} onCheckedChange={onChange} />
     {(label || description) && (
       <div style={{ flex: 1 }}>
         {label && <div style={{ fontWeight: 500 }}>{label}</div>}
@@ -385,9 +428,10 @@ interface MCPCardProps {
   config?: MCPSecurityConfig;
   onConfigChange: (config: MCPSecurityConfig) => void;
   currentIDE?: string; // The IDE we're currently running in
+  globalEnabled?: boolean; // Whether MCP Guard is globally enabled
 }
 
-export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange, currentIDE = 'cursor' }) => {
+export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange, currentIDE = 'cursor', globalEnabled = true }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Initialize config if not exists
@@ -414,14 +458,23 @@ export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange
     unknown: 'var(--text-muted)',
   };
 
+  // Determine border color based on guard status and global enabled state
+  const getBorderColor = () => {
+    if (!globalEnabled) {
+      return 'var(--border-color)'; // Grey when globally disabled
+    }
+    return currentConfig.isGuarded ? '#22c55e' : 'var(--warning)';
+  };
+
   return (
     <div
       style={{
         borderRadius: 'var(--radius-md)',
-        border: `1px solid ${currentConfig.isGuarded ? '#22c55e' : 'var(--border-color)'}`,
+        border: `2px solid ${getBorderColor()}`,
         background: 'var(--bg-secondary)',
         overflow: 'hidden',
         transition: 'border-color 0.2s ease',
+        opacity: globalEnabled ? 1 : 0.7,
       }}
       className="animate-slide-in"
     >
@@ -441,15 +494,28 @@ export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange
             width: '36px',
             height: '36px',
             borderRadius: 'var(--radius-sm)',
-            background: currentConfig.isGuarded ? '#22c55e' : 'rgba(234, 179, 8, 0.15)',
-            color: currentConfig.isGuarded ? 'white' : '#eab308',
+            background: !globalEnabled 
+              ? 'var(--bg-hover)'
+              : currentConfig.isGuarded 
+                ? '#22c55e' 
+                : 'rgba(255, 215, 0, 0.15)',
+            color: !globalEnabled 
+              ? 'var(--text-muted)'
+              : currentConfig.isGuarded 
+                ? 'white' 
+                : 'var(--warning)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             transition: 'all 0.2s ease',
           }}
         >
-          {currentConfig.isGuarded ? <ShieldIcon size={18} /> : <ShieldOffIcon size={18} />}
+          {!globalEnabled 
+            ? <ShieldOffIcon size={18} />
+            : currentConfig.isGuarded 
+              ? <ShieldIcon size={18} /> 
+              : <ShieldOffIcon size={18} />
+          }
         </div>
         
         <div style={{ flex: 1 }}>
@@ -485,37 +551,21 @@ export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange
           <span style={{ 
             fontSize: '12px', 
             fontWeight: 500, 
-            color: currentConfig.isGuarded ? 'var(--success)' : 'var(--text-secondary)' 
+            color: !globalEnabled 
+              ? 'var(--text-muted)' 
+              : currentConfig.isGuarded 
+                ? 'var(--success)' 
+                : 'var(--warning)' 
           }}>
-            {currentConfig.isGuarded ? 'Unguard' : 'Guard'}
+            {!globalEnabled 
+              ? (currentConfig.isGuarded ? 'Will Guard' : 'Unguarded')
+              : (currentConfig.isGuarded ? 'Guarded' : 'Unguarded')
+            }
           </span>
-          <div
-            onClick={() => updateConfig({ isGuarded: !currentConfig.isGuarded })}
-            style={{
-              width: '44px',
-              height: '24px',
-              borderRadius: '12px',
-              background: currentConfig.isGuarded ? '#22c55e' : 'var(--bg-hover)',
-              position: 'relative',
-              cursor: 'pointer',
-              transition: 'background 0.2s ease',
-              border: currentConfig.isGuarded ? 'none' : '1px solid var(--border-color)',
-            }}
-          >
-            <div
-              style={{
-                width: '20px',
-                height: '20px',
-                borderRadius: '50%',
-                background: currentConfig.isGuarded ? 'white' : 'var(--text-muted)',
-                position: 'absolute',
-                top: '2px',
-                left: currentConfig.isGuarded ? '22px' : '2px',
-                transition: 'all 0.2s ease',
-                boxShadow: currentConfig.isGuarded ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-              }}
-            />
-          </div>
+          <Switch 
+            checked={currentConfig.isGuarded} 
+            onCheckedChange={(checked) => updateConfig({ isGuarded: checked })}
+          />
         </div>
         
         <ChevronDownIcon
@@ -750,7 +800,7 @@ export const Header: React.FC<HeaderProps> = ({ globalEnabled, onGlobalToggle, o
       <Toggle
         enabled={globalEnabled}
         onChange={onGlobalToggle}
-        label="MCP Guard Enabled"
+        label={globalEnabled ? "MCP Guard Enabled" : "MCP Guard Disabled"}
       />
       
       <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>

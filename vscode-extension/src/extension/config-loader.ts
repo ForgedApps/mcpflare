@@ -424,7 +424,7 @@ export function disableMCPInIDE(mcpName: string): { success: boolean; message: s
   }
 
   console.log(`MCP Guard: Disabled ${mcpName} in IDE config`);
-  return { success: true, message: `${mcpName} disabled - will be proxied through MCP Guard`, requiresRestart: true };
+  return { success: true, message: `${mcpName} disabled - will be proxied through MCP Guard`, requiresRestart: false };
 }
 
 /**
@@ -470,7 +470,7 @@ export function enableMCPInIDE(mcpName: string): { success: boolean; message: st
   }
 
   console.log(`MCP Guard: Enabled ${mcpName} in IDE config`);
-  return { success: true, message: `${mcpName} restored to active config`, requiresRestart: true };
+  return { success: true, message: `${mcpName} restored to active config`, requiresRestart: false };
 }
 
 /**
@@ -550,6 +550,37 @@ export function ensureMCPGuardInConfig(extensionPath: string): { success: boolea
 
   console.log('MCP Guard: Added mcpguard to IDE config');
   return { success: true, message: 'Added mcpguard to IDE config', added: true };
+}
+
+/**
+ * Remove mcpguard from the IDE config
+ * Used when MCP Guard is globally disabled
+ */
+export function removeMCPGuardFromConfig(): { success: boolean; message: string } {
+  const configPath = getPrimaryIDEConfigPath();
+  if (!configPath) {
+    return { success: false, message: 'No IDE config file found' };
+  }
+
+  const rawConfig = readRawConfigFile(configPath);
+  if (!rawConfig) {
+    return { success: false, message: 'Failed to read IDE config' };
+  }
+
+  // Check if mcpguard exists in active config
+  if (!rawConfig.mcpServers['mcpguard']) {
+    return { success: true, message: 'mcpguard not in config' };
+  }
+
+  // Remove mcpguard from active config
+  delete rawConfig.mcpServers['mcpguard'];
+
+  if (!writeConfigFile(configPath, rawConfig)) {
+    return { success: false, message: 'Failed to write config file' };
+  }
+
+  console.log('MCP Guard: Removed mcpguard from IDE config');
+  return { success: true, message: 'Removed mcpguard from IDE config' };
 }
 
 /**

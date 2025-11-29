@@ -10,6 +10,7 @@ import {
   disableMCPInIDE, 
   enableMCPInIDE,
   ensureMCPGuardInConfig,
+  removeMCPGuardFromConfig,
   isMCPDisabled 
 } from './config-loader';
 import type { MCPGuardSettings, MCPSecurityConfig, WebviewMessage, ExtensionMessage } from './types';
@@ -170,12 +171,63 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
 
   /**
    * Save settings to file
+   * When the global 'enabled' toggle changes, update IDE config for all guarded MCPs
    */
   private async _saveSettings(settings: MCPGuardSettings): Promise<void> {
     try {
       const settingsPath = getSettingsPath();
+      
+      // Check if global enabled state changed
+      let previousSettings: MCPGuardSettings = DEFAULT_SETTINGS;
+      if (fs.existsSync(settingsPath)) {
+        const content = fs.readFileSync(settingsPath, 'utf-8');
+        previousSettings = JSON.parse(content) as MCPGuardSettings;
+      }
+      
+      const globalEnabledChanged = previousSettings.enabled !== settings.enabled;
+      
+      // Save settings first
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      this._postMessage({ type: 'success', message: 'Settings saved successfully' });
+      
+      // If global enabled state changed, update IDE config for all guarded MCPs
+      if (globalEnabledChanged) {
+        const guardedMcps = settings.mcpConfigs.filter(c => c.isGuarded);
+        
+        if (settings.enabled) {
+          // MCP Guard is now enabled - disable guarded MCPs in IDE config (proxy through mcpguard)
+          for (const config of guardedMcps) {
+            const result = disableMCPInIDE(config.mcpName);
+            if (result.success) {
+              console.log(`MCP Guard: ${config.mcpName} disabled in IDE config`);
+            }
+          }
+          // Ensure mcpguard is in the config
+          const extensionPath = this._extensionUri.fsPath;
+          ensureMCPGuardInConfig(extensionPath);
+          
+          this._postMessage({ type: 'success', message: `MCP Guard enabled - ${guardedMcps.length} MCP${guardedMcps.length === 1 ? '' : 's'} now protected` });
+        } else {
+          // MCP Guard is now disabled - restore all guarded MCPs to active in IDE config
+          for (const config of guardedMcps) {
+            const result = enableMCPInIDE(config.mcpName);
+            if (result.success) {
+              console.log(`MCP Guard: ${config.mcpName} restored to active in IDE config`);
+            }
+          }
+          
+          // Also remove mcpguard itself from the IDE config since it's not needed
+          const removeResult = removeMCPGuardFromConfig();
+          if (removeResult.success) {
+            console.log('MCP Guard: Removed mcpguard server from IDE config');
+          }
+          
+          this._postMessage({ type: 'success', message: `MCP Guard disabled - ${guardedMcps.length} MCP${guardedMcps.length === 1 ? '' : 's'} restored to direct access` });
+        }
+        
+        // Refresh MCP list to show updated status
+        await this._sendMCPServers();
+      }
+      // No notification needed for other settings changes - the UI reflects the state
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this._postMessage({ type: 'error', message: `Failed to save settings: ${message}` });
@@ -212,13 +264,11 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
       
       // If guard status changed, update IDE config
-      let requiresRestart = false;
       if (guardStatusChanged) {
         if (isNowGuarded) {
           // Disable MCP in IDE config (move to _mcpguard_disabled)
           const result = disableMCPInIDE(config.mcpName);
           if (result.success) {
-            requiresRestart = result.requiresRestart;
             console.log(`MCP Guard: ${config.mcpName} disabled in IDE config`);
           } else {
             console.warn(`MCP Guard: Failed to disable ${config.mcpName} in IDE: ${result.message}`);
@@ -231,7 +281,6 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
           // Enable MCP in IDE config (restore from _mcpguard_disabled)
           const result = enableMCPInIDE(config.mcpName);
           if (result.success) {
-            requiresRestart = result.requiresRestart;
             console.log(`MCP Guard: ${config.mcpName} enabled in IDE config`);
           } else {
             console.warn(`MCP Guard: Failed to enable ${config.mcpName} in IDE: ${result.message}`);
@@ -239,35 +288,23 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
         }
       }
       
-      this._postMessage({ type: 'success', message: `Configuration for "${config.mcpName}" saved` });
+      // Show appropriate success message
+      if (guardStatusChanged) {
+        const status = isNowGuarded ? 'guarded' : 'unguarded';
+        this._postMessage({ type: 'success', message: `${config.mcpName} is now ${status}` });
+      } else {
+        this._postMessage({ type: 'success', message: `Configuration for "${config.mcpName}" saved` });
+      }
       this._postMessage({ type: 'settings', data: settings });
       
       // Refresh MCP list to show updated status
       await this._sendMCPServers();
-      
-      // Show restart prompt if needed
-      if (requiresRestart) {
-        this._showRestartPrompt(config.mcpName, isNowGuarded);
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this._postMessage({ type: 'error', message: `Failed to save MCP config: ${message}` });
     }
   }
   
-  /**
-   * Show a prompt to restart the IDE after config changes
-   */
-  private _showRestartPrompt(mcpName: string, isGuarded: boolean): void {
-    const action = isGuarded ? 'guarded' : 'unguarded';
-    const message = `${mcpName} is now ${action}. Restart Cursor/VS Code to apply changes.`;
-    
-    vscode.window.showInformationMessage(message, 'Restart Now', 'Later').then(selection => {
-      if (selection === 'Restart Now') {
-        vscode.commands.executeCommand('workbench.action.reloadWindow');
-      }
-    });
-  }
 
   /**
    * Import MCPs from IDE configs
