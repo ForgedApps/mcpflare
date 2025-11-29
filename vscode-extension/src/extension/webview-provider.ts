@@ -4,7 +4,14 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { loadAllMCPServers, getSettingsPath } from './config-loader';
+import { 
+  loadAllMCPServers, 
+  getSettingsPath, 
+  disableMCPInIDE, 
+  enableMCPInIDE,
+  ensureMCPGuardInConfig,
+  isMCPDisabled 
+} from './config-loader';
 import type { MCPGuardSettings, MCPSecurityConfig, WebviewMessage, ExtensionMessage } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
@@ -13,9 +20,31 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
   
   private _view?: vscode.WebviewView;
   private _extensionUri: vscode.Uri;
+  private _mcpCount: number = 0;
 
   constructor(extensionUri: vscode.Uri) {
     this._extensionUri = extensionUri;
+  }
+
+  /**
+   * Update the view badge to show MCP count or warning
+   */
+  private _updateBadge(): void {
+    if (!this._view) return;
+    
+    if (this._mcpCount === 0) {
+      // Show warning badge when no MCPs found
+      this._view.badge = {
+        tooltip: 'No MCP servers detected - click to import',
+        value: '!'
+      };
+    } else {
+      // Show count badge
+      this._view.badge = {
+        tooltip: `${this._mcpCount} MCP server${this._mcpCount === 1 ? '' : 's'} detected`,
+        value: this._mcpCount
+      };
+    }
   }
 
   public resolveWebviewView(
@@ -36,6 +65,27 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
       await this._handleMessage(message);
     });
+
+    // Auto-import MCPs on view initialization
+    this._autoImportOnInit();
+  }
+
+  /**
+   * Automatically import MCPs when the view is first shown
+   */
+  private async _autoImportOnInit(): Promise<void> {
+    // Small delay to ensure webview is ready
+    setTimeout(() => {
+      const mcps = loadAllMCPServers();
+      this._mcpCount = mcps.length;
+      this._updateBadge();
+      
+      // Log what we found for debugging
+      console.log(`MCP Guard: Auto-imported ${mcps.length} MCP server(s)`);
+      if (mcps.length > 0) {
+        console.log('MCP Guard: Found servers:', mcps.map(m => `${m.name} (${m.source})`).join(', '));
+      }
+    }, 100);
   }
 
   /**
@@ -107,6 +157,8 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
     try {
       this._postMessage({ type: 'loading', isLoading: true });
       const mcps = loadAllMCPServers();
+      this._mcpCount = mcps.length;
+      this._updateBadge();
       this._postMessage({ type: 'mcpServers', data: mcps });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -131,7 +183,7 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Save a single MCP config
+   * Save a single MCP config and update IDE config if guard status changed
    */
   private async _saveMCPConfig(config: MCPSecurityConfig): Promise<void> {
     try {
@@ -143,7 +195,13 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
         settings = JSON.parse(content) as MCPGuardSettings;
       }
       
-      // Update or add the MCP config
+      // Check if guard status changed
+      const existingConfig = settings.mcpConfigs.find(c => c.id === config.id);
+      const wasGuarded = existingConfig?.isGuarded ?? false;
+      const isNowGuarded = config.isGuarded;
+      const guardStatusChanged = wasGuarded !== isNowGuarded;
+      
+      // Update or add the MCP config in settings
       const existingIndex = settings.mcpConfigs.findIndex(c => c.id === config.id);
       if (existingIndex >= 0) {
         settings.mcpConfigs[existingIndex] = config;
@@ -152,12 +210,63 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
       }
       
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      
+      // If guard status changed, update IDE config
+      let requiresRestart = false;
+      if (guardStatusChanged) {
+        if (isNowGuarded) {
+          // Disable MCP in IDE config (move to _mcpguard_disabled)
+          const result = disableMCPInIDE(config.mcpName);
+          if (result.success) {
+            requiresRestart = result.requiresRestart;
+            console.log(`MCP Guard: ${config.mcpName} disabled in IDE config`);
+          } else {
+            console.warn(`MCP Guard: Failed to disable ${config.mcpName} in IDE: ${result.message}`);
+          }
+          
+          // Also ensure mcpguard is in the config
+          const extensionPath = this._extensionUri.fsPath;
+          ensureMCPGuardInConfig(extensionPath);
+        } else {
+          // Enable MCP in IDE config (restore from _mcpguard_disabled)
+          const result = enableMCPInIDE(config.mcpName);
+          if (result.success) {
+            requiresRestart = result.requiresRestart;
+            console.log(`MCP Guard: ${config.mcpName} enabled in IDE config`);
+          } else {
+            console.warn(`MCP Guard: Failed to enable ${config.mcpName} in IDE: ${result.message}`);
+          }
+        }
+      }
+      
       this._postMessage({ type: 'success', message: `Configuration for "${config.mcpName}" saved` });
       this._postMessage({ type: 'settings', data: settings });
+      
+      // Refresh MCP list to show updated status
+      await this._sendMCPServers();
+      
+      // Show restart prompt if needed
+      if (requiresRestart) {
+        this._showRestartPrompt(config.mcpName, isNowGuarded);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this._postMessage({ type: 'error', message: `Failed to save MCP config: ${message}` });
     }
+  }
+  
+  /**
+   * Show a prompt to restart the IDE after config changes
+   */
+  private _showRestartPrompt(mcpName: string, isGuarded: boolean): void {
+    const action = isGuarded ? 'guarded' : 'unguarded';
+    const message = `${mcpName} is now ${action}. Restart Cursor/VS Code to apply changes.`;
+    
+    vscode.window.showInformationMessage(message, 'Restart Now', 'Later').then(selection => {
+      if (selection === 'Restart Now') {
+        vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    });
   }
 
   /**

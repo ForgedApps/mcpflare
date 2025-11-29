@@ -4,7 +4,11 @@ Secure isolation for MCP servers with configurable network and file system acces
 
 ## Quick Start
 
-**[Open MCP Guard Settings](command:workbench.view.extension.mcpguard)** or click the shield icon in the activity bar.
+1. **Click the shield icon** 🛡️ in the activity bar (left sidebar)
+2. Your MCP servers are auto-imported from Claude, Cursor, and Copilot configs
+3. Toggle protection on for any MCP you want to secure
+
+> **Tip:** Use `Ctrl+Shift+P` → "MCP Guard: Open Settings" to open the panel anytime.
 
 ## Features
 

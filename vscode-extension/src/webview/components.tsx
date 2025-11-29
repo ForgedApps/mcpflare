@@ -124,9 +124,18 @@ export const CheckIcon: React.FC<IconProps> = ({ size = 20, className }) => (
 
 export const AlertIcon: React.FC<IconProps> = ({ size = 20, className }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="12" />
-    <line x1="12" y1="16" x2="12.01" y2="16" />
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+// Shield with X - for unguarded state
+export const ShieldOffIcon: React.FC<IconProps> = ({ size = 20, className }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <line x1="9" y1="9" x2="15" y2="15" />
+    <line x1="15" y1="9" x2="9" y2="15" />
   </svg>
 );
 
@@ -375,9 +384,10 @@ interface MCPCardProps {
   server: MCPServerInfo;
   config?: MCPSecurityConfig;
   onConfigChange: (config: MCPSecurityConfig) => void;
+  currentIDE?: string; // The IDE we're currently running in
 }
 
-export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange }) => {
+export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange, currentIDE = 'cursor' }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Initialize config if not exists
@@ -431,43 +441,82 @@ export const MCPCard: React.FC<MCPCardProps> = ({ server, config, onConfigChange
             width: '36px',
             height: '36px',
             borderRadius: 'var(--radius-sm)',
-            background: currentConfig.isGuarded ? '#22c55e' : 'var(--bg-hover)',
-            color: currentConfig.isGuarded ? 'white' : 'var(--text-secondary)',
+            background: currentConfig.isGuarded ? '#22c55e' : 'rgba(234, 179, 8, 0.15)',
+            color: currentConfig.isGuarded ? 'white' : '#eab308',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             transition: 'all 0.2s ease',
           }}
         >
-          <ShieldIcon size={18} />
+          {currentConfig.isGuarded ? <ShieldIcon size={18} /> : <ShieldOffIcon size={18} />}
         </div>
         
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontWeight: 600 }}>{server.name}</span>
-            <span
-              style={{
-                fontSize: '10px',
-                padding: '2px 6px',
-                borderRadius: 'var(--radius-sm)',
-                background: sourceColors[server.source],
-                color: 'white',
-                textTransform: 'uppercase',
-                fontWeight: 600,
-              }}
-            >
-              {server.source}
-            </span>
+            {/* Only show source tag if from a different IDE */}
+            {server.source !== currentIDE && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: sourceColors[server.source] || sourceColors.unknown,
+                  color: 'white',
+                  textTransform: 'uppercase',
+                  fontWeight: 600,
+                }}
+              >
+                {server.source}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
             {server.command ? `${server.command} ${(server.args || []).slice(0, 2).join(' ')}...` : server.url || 'No command'}
           </div>
         </div>
 
-        <Toggle
-          enabled={currentConfig.isGuarded}
-          onChange={(enabled) => updateConfig({ isGuarded: enabled })}
-        />
+        {/* Guard Toggle */}
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
+          <span style={{ 
+            fontSize: '12px', 
+            fontWeight: 500, 
+            color: currentConfig.isGuarded ? 'var(--success)' : 'var(--text-secondary)' 
+          }}>
+            {currentConfig.isGuarded ? 'Unguard' : 'Guard'}
+          </span>
+          <div
+            onClick={() => updateConfig({ isGuarded: !currentConfig.isGuarded })}
+            style={{
+              width: '44px',
+              height: '24px',
+              borderRadius: '12px',
+              background: currentConfig.isGuarded ? '#22c55e' : 'var(--bg-hover)',
+              position: 'relative',
+              cursor: 'pointer',
+              transition: 'background 0.2s ease',
+              border: currentConfig.isGuarded ? 'none' : '1px solid var(--border-color)',
+            }}
+          >
+            <div
+              style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: currentConfig.isGuarded ? 'white' : 'var(--text-muted)',
+                position: 'absolute',
+                top: '2px',
+                left: currentConfig.isGuarded ? '22px' : '2px',
+                transition: 'all 0.2s ease',
+                boxShadow: currentConfig.isGuarded ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
+              }}
+            />
+          </div>
+        </div>
         
         <ChevronDownIcon
           size={16}
@@ -655,18 +704,20 @@ export const Notification: React.FC<NotificationProps> = ({ type, message, onDis
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
-      padding: '12px 16px',
+      padding: '10px 14px',
       borderRadius: 'var(--radius-md)',
-      background: type === 'success' ? 'var(--success)' : 'var(--error)',
-      color: 'white',
-      fontSize: '13px',
+      background: 'var(--bg-secondary)',
+      border: `1px solid ${type === 'success' ? '#22c55e' : 'var(--error)'}`,
+      color: type === 'success' ? '#22c55e' : 'var(--error)',
+      fontSize: '12px',
       marginBottom: '8px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
     }}
     className="animate-fade-in"
   >
-    {type === 'success' ? <CheckIcon size={16} /> : <AlertIcon size={16} />}
-    <span style={{ flex: 1 }}>{message}</span>
-    <span onClick={onDismiss} style={{ cursor: 'pointer', opacity: 0.7 }}>×</span>
+    {type === 'success' ? <CheckIcon size={14} /> : <AlertIcon size={14} />}
+    <span style={{ flex: 1, color: 'var(--text-primary)' }}>{message}</span>
+    <span onClick={onDismiss} style={{ cursor: 'pointer', opacity: 0.5, fontSize: '16px' }}>×</span>
   </div>
 );
 
