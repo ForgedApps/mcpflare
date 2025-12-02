@@ -141,7 +141,29 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
         break;
       
       case 'openMCPGuardDocs':
-        vscode.env.openExternal(vscode.Uri.parse('https://github.com/mcpguard/mcpguard'));
+        await vscode.env.openExternal(vscode.Uri.parse('https://github.com/mcpguard/mcpguard'));
+        break;
+      
+      case 'openExternalLink':
+        if ('url' in message && message.url) {
+          this._log(`Opening external link: ${message.url}`);
+          try {
+            const uri = vscode.Uri.parse(message.url);
+            // Try vscode.open command which is more reliable for external URLs
+            await vscode.commands.executeCommand('vscode.open', uri);
+            this._log(`vscode.open command executed for: ${message.url}`);
+          } catch (err) {
+            this._log(`Error opening external link: ${err}`);
+            // Fallback to openExternal
+            try {
+              await vscode.env.openExternal(vscode.Uri.parse(message.url));
+            } catch (err2) {
+              this._log(`Fallback openExternal also failed: ${err2}`);
+            }
+          }
+        } else {
+          this._log(`openExternalLink called but no URL provided`);
+        }
         break;
       
       case 'assessTokens':
@@ -163,6 +185,9 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
       case 'testConnection':
         await this._testConnection(message.mcpName);
         break;
+      
+      default:
+        this._log(`Unhandled message type: ${(message as { type: string }).type}`);
     }
   }
 

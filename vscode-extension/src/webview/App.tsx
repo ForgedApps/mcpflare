@@ -286,6 +286,11 @@ export const App: React.FC = () => {
             tokenSavings={tokenSavings}
             isAssessing={isAssessingTokens}
             globalEnabled={settings.enabled}
+            servers={sortedServers}
+            contextWindowSize={settings.contextWindowSize}
+            onContextWindowChange={(size) => {
+              saveSettings({ ...settings, contextWindowSize: size });
+            }}
           />
         </div>
       )}

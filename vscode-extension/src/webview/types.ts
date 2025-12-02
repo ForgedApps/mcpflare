@@ -119,6 +119,8 @@ export interface MCPGuardSettings {
   tokenMetricsCache?: TokenMetricsCache;
   /** Cached assessment errors for MCPs */
   assessmentErrorsCache?: AssessmentErrorsCache;
+  /** Context window size in tokens (default: 200000) */
+  contextWindowSize?: number;
 }
 
 export type WebviewMessage =
@@ -133,7 +135,8 @@ export type WebviewMessage =
   | { type: 'openIDEConfig'; source: 'claude' | 'copilot' | 'cursor' | 'unknown' }
   | { type: 'retryAssessment'; mcpName: string }
   | { type: 'openLogs' }
-  | { type: 'testConnection'; mcpName: string };
+  | { type: 'testConnection'; mcpName: string }
+  | { type: 'openExternalLink'; url: string };
 
 /**
  * Token savings summary data

@@ -247,18 +247,86 @@ interface TokenSavingsBadgeProps {
   tokenSavings: TokenSavingsSummary | null;
   isAssessing: boolean;
   globalEnabled: boolean;
+  servers?: MCPServerInfo[];
+  contextWindowSize?: number;
+  onContextWindowChange?: (size: number) => void;
 }
 
+// Default context window size (200k tokens - Claude/GPT-4 standard)
+const DEFAULT_CONTEXT_WINDOW_SIZE = 200000;
+
+// Context window best practices article
+const CONTEXT_WINDOW_ARTICLE_URL = 'https://www.mckinsey.com/featured-insights/mckinsey-explainers/what-is-a-context-window';
+
+// Get status based on total MCP tokens relative to context window
+// Based on research: MCP tools should ideally use <10% of context window
+// to avoid degrading LLM reasoning quality
+const getTokenStatus = (tokens: number, contextWindowSize: number): { label: string; color: string; severity: 'low' | 'high' | 'critical' } => {
+  const percentage = (tokens / contextWindowSize) * 100;
+  if (percentage < 5) return { label: 'Excellent', color: '#22c55e', severity: 'low' };
+  if (percentage < 10) return { label: 'Good', color: '#84cc16', severity: 'low' };
+  if (percentage < 15) return { label: 'High', color: '#f97316', severity: 'high' };
+  return { label: 'Critical', color: '#ef4444', severity: 'critical' };
+};
+
+// Generate a consistent color for an MCP based on its name
+const getMCPColor = (name: string, index: number): string => {
+  const colors = [
+    '#6366f1', // Indigo
+    '#8b5cf6', // Purple
+    '#a855f7', // Violet
+    '#ec4899', // Pink
+    '#f43f5e', // Rose
+    '#f97316', // Orange
+    '#eab308', // Yellow
+    '#84cc16', // Lime
+    '#22c55e', // Green
+    '#14b8a6', // Teal
+    '#06b6d4', // Cyan
+    '#3b82f6', // Blue
+  ];
+  // Use name hash + index for color selection
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = ((hash << 5) - hash) + name.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return colors[(Math.abs(hash) + index) % colors.length];
+};
+
 /**
- * Displays context window token savings from using MCPGuard
- * Shows how many tokens are saved by routing MCP calls through MCPGuard
- * instead of loading all MCP tool schemas directly
+ * Displays context window token usage as a visual bar
+ * Shows relative size of each MCP's token contribution
+ * Color-coded based on impact to LLM performance
+ * 
+ * Research shows MCP tools should ideally use <10% of context window
+ * to avoid degrading LLM reasoning quality (up to 85% accuracy drop possible)
  */
 export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({ 
   tokenSavings, 
   isAssessing,
-  globalEnabled 
+  globalEnabled,
+  servers = [],
+  contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
+  onContextWindowChange
 }) => {
+  const [hoveredMCP, setHoveredMCP] = useState<string | null>(null);
+  const [isEditingContext, setIsEditingContext] = useState(false);
+  const [contextInputValue, setContextInputValue] = useState('');
+
+  // Use configured context window size
+  const effectiveContextWindow = contextWindowSize || DEFAULT_CONTEXT_WINDOW_SIZE;
+
+  // Handle context window input submit (value is in K, so 200 = 200k)
+  const handleContextSubmit = () => {
+    const numValue = parseInt(contextInputValue, 10);
+    if (!isNaN(numValue) && numValue > 0 && onContextWindowChange) {
+      onContextWindowChange(numValue * 1000); // Convert K to actual tokens
+    }
+    setIsEditingContext(false);
+    setContextInputValue('');
+  };
+
   if (!tokenSavings && !isAssessing) {
     return null;
   }
@@ -268,89 +336,412 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
     return num.toLocaleString();
   };
 
-  // No guarded MCPs yet
-  if (tokenSavings && tokenSavings.guardedMCPs === 0) {
+  // Format number with K suffix (no decimal for round numbers)
+  const formatCompact = (num: number): string => {
+    if (num >= 1000) {
+      const k = num / 1000;
+      return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
+    }
+    return num.toString();
+  };
+
+  // Open external link via extension
+  const openContextArticle = () => {
+    postMessage({ type: 'openExternalLink', url: CONTEXT_WINDOW_ARTICLE_URL });
+  };
+
+  // No servers with token metrics yet
+  if (!tokenSavings || tokenSavings.assessedMCPs === 0) {
+    // Still assessing
+    if (isAssessing) {
+      return (
+        <div
+          style={{
+            padding: '14px 16px',
+            borderRadius: '6px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className="loading-spinner" style={{ width: '14px', height: '14px' }} />
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Assessing MCP token usage...
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '10px 14px',
-          borderRadius: 'var(--radius-md)',
+          padding: '14px 16px',
+          borderRadius: '6px',
           background: 'var(--bg-secondary)',
           border: '1px solid var(--border-color)',
         }}
       >
-        <ZapIcon size={16} className={undefined} />
-        <div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            Guard MCPs to save context window tokens
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ZapIcon size={14} className={undefined} />
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            No MCP token data available
+          </span>
         </div>
       </div>
     );
   }
 
-  // Still assessing
-  if (isAssessing) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '12px 16px',
-          borderRadius: 'var(--radius-md)',
-          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
-          border: '1px solid rgba(139, 92, 246, 0.2)',
-        }}
-      >
-        <span className="loading-spinner" style={{ width: '16px', height: '16px' }} />
-        <div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-            Assessing token usage...
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Calculate total tokens and MCP breakdown
+  const mcpsWithTokens = servers
+    .filter(s => s.tokenMetrics?.estimatedTokens)
+    .map((s, index) => ({
+      name: s.name,
+      tokens: s.tokenMetrics!.estimatedTokens,
+      color: getMCPColor(s.name, index),
+      toolCount: s.tokenMetrics!.toolCount,
+    }))
+    .sort((a, b) => b.tokens - a.tokens); // Sort by tokens descending
 
-  if (!tokenSavings || tokenSavings.tokensSaved <= 0) {
-    return null;
-  }
-
-  const reductionPercent = Math.round((1 - tokenSavings.mcpGuardTokens / tokenSavings.totalTokensWithoutGuard) * 100);
+  const totalTokens = mcpsWithTokens.reduce((sum, mcp) => sum + mcp.tokens, 0);
+  const contextPercentage = (totalTokens / effectiveContextWindow) * 100;
+  const status = getTokenStatus(totalTokens, effectiveContextWindow);
 
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        padding: '10px 14px',
-        borderRadius: 'var(--radius-md)',
+        padding: '14px 16px',
+        borderRadius: '6px',
         background: 'var(--bg-secondary)',
-        border: '1px solid rgba(139, 92, 246, 0.3)',
+        border: `1px solid ${status.color}40`,
         opacity: globalEnabled ? 1 : 0.6,
-        fontSize: '12px',
       }}
       className="animate-fade-in"
     >
-      <SparklesIcon size={16} className={undefined} />
-      <span style={{ color: 'var(--text-muted)' }}>
-        {formatNumber(tokenSavings.totalTokensWithoutGuard)} → {formatNumber(tokenSavings.mcpGuardTokens)} tokens
-      </span>
-      <span style={{ color: '#8b5cf6', fontWeight: 600 }}>
-        {formatNumber(tokenSavings.tokensSaved)} saved
-      </span>
-      <span style={{ 
-        color: '#22c55e', 
-        fontWeight: 600,
-        marginLeft: 'auto',
-      }}>
-        {reductionPercent}% smaller
-      </span>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ZapIcon size={14} className={undefined} />
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            MCP Context Usage
+          </span>
+          <button
+            onClick={openContextArticle}
+            title="Learn about context windows and LLM performance"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-muted)',
+              borderRadius: '50%',
+              transition: 'color 0.15s ease',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+          >
+            <InfoIcon size={14} className={undefined} />
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span 
+            style={{ 
+              fontSize: '10px', 
+              padding: '2px 8px', 
+              borderRadius: '4px',
+              background: `${status.color}20`,
+              color: status.color,
+              fontWeight: 600,
+            }}
+          >
+            {status.label}
+          </span>
+          {isEditingContext ? (
+            <>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {contextPercentage.toFixed(1)}% of{' '}
+              </span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder={String(effectiveContextWindow / 1000)}
+                  value={contextInputValue}
+                  onChange={(e) => {
+                    // Only allow numeric input
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    setContextInputValue(val);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleContextSubmit();
+                    if (e.key === 'Escape') {
+                      setIsEditingContext(false);
+                      setContextInputValue('');
+                    }
+                  }}
+                  onBlur={handleContextSubmit}
+                  style={{
+                    width: '50px',
+                    fontSize: '11px',
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--accent)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    textAlign: 'right',
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>k</span>
+              </div>
+            </>
+          ) : (
+            <span
+              onClick={() => {
+                if (onContextWindowChange) {
+                  setContextInputValue(String(effectiveContextWindow / 1000));
+                  setIsEditingContext(true);
+                }
+              }}
+              title={onContextWindowChange ? "Click to change context window size" : "Context window size"}
+              style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                cursor: onContextWindowChange ? 'pointer' : 'default',
+              }}
+              onMouseEnter={(e) => onContextWindowChange && (e.currentTarget.style.textDecoration = 'underline')}
+              onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+            >
+              {contextPercentage.toFixed(1)}% of {formatCompact(effectiveContextWindow)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Progress Bar - shows relative MCP sizes, total width = 100% */}
+      <div
+        style={{
+          height: '28px',
+          borderRadius: '4px',
+          background: 'var(--bg-primary)',
+          overflow: 'hidden',
+          position: 'relative',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        {/* MCP Segments - fill entire bar proportionally */}
+        <div style={{ display: 'flex', height: '100%', width: '100%' }}>
+          {mcpsWithTokens.map((mcp, index) => {
+            const segmentWidth = totalTokens > 0 ? (mcp.tokens / totalTokens) * 100 : 0;
+            const isHovered = hoveredMCP === mcp.name;
+            
+            return (
+              <div
+                key={mcp.name}
+                onMouseEnter={() => setHoveredMCP(mcp.name)}
+                onMouseLeave={() => setHoveredMCP(null)}
+                style={{
+                  width: `${segmentWidth}%`,
+                  height: '100%',
+                  background: mcp.color,
+                  opacity: isHovered ? 1 : 0.85,
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'opacity 0.15s ease',
+                  borderRight: index < mcpsWithTokens.length - 1 ? '1px solid rgba(0,0,0,0.2)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}
+                title={`${mcp.name}: ${formatNumber(mcp.tokens)} tokens (${mcp.toolCount} tools)`}
+              >
+                {/* Show name if segment is wide enough */}
+                {segmentWidth > 15 && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'white',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      padding: '0 6px',
+                    }}
+                  >
+                    {mcp.name}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Total token count overlay */}
+        <div
+          style={{
+            position: 'absolute',
+            right: '10px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            fontSize: '12px',
+            fontWeight: 700,
+            color: 'white',
+            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+        >
+          <span>{formatNumber(totalTokens)}</span>
+          <span style={{ fontSize: '10px', fontWeight: 500, opacity: 0.9 }}>tokens</span>
+        </div>
+      </div>
+
+      {/* Legend - shows MCP breakdown */}
+      <div style={{ marginTop: '8px' }}>
+        {hoveredMCP ? (
+          <div 
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              flexWrap: 'wrap',
+            }}
+            className="animate-fade-in"
+          >
+            {(() => {
+              const mcp = mcpsWithTokens.find(m => m.name === hoveredMCP);
+              if (!mcp) return null;
+              const mcpPercent = totalTokens > 0 ? ((mcp.tokens / totalTokens) * 100).toFixed(0) : '0';
+              const mcpContextPercent = ((mcp.tokens / effectiveContextWindow) * 100).toFixed(2);
+              return (
+                <>
+                  <span
+                    style={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '2px',
+                      background: mcp.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{mcp.name}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>·</span>
+                  <span>{formatNumber(mcp.tokens)} tokens</span>
+                  <span style={{ color: 'var(--text-muted)' }}>·</span>
+                  <span>{mcp.toolCount} tools</span>
+                  <span style={{ color: 'var(--text-muted)' }}>·</span>
+                  <span style={{ color: mcp.color, fontWeight: 600 }}>{mcpPercent}%</span>
+                  <span style={{ color: 'var(--text-muted)' }}>·</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{mcpContextPercent}% of context</span>
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '10px' }}>
+            {mcpsWithTokens.map(mcp => {
+              const mcpPercent = totalTokens > 0 ? ((mcp.tokens / totalTokens) * 100).toFixed(0) : '0';
+              return (
+                <div 
+                  key={mcp.name}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '4px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={() => setHoveredMCP(mcp.name)}
+                  onMouseLeave={() => setHoveredMCP(null)}
+                >
+                  <span
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '2px',
+                      background: mcp.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{mcp.name}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{formatCompact(mcp.tokens)}</span>
+                  <span style={{ color: mcp.color, fontWeight: 600 }}>{mcpPercent}%</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Impact Warning - based on research that >10% context usage degrades LLM performance */}
+      {status.severity !== 'low' && (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            background: `${status.color}10`,
+            border: `1px solid ${status.color}30`,
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+          }}
+        >
+          <AlertIcon size={14} className={undefined} />
+          <div>
+            <span style={{ fontWeight: 600, color: status.color }}>
+              {status.severity === 'critical' ? 'High impact on LLM performance. ' : 'Notable context consumption. '}
+            </span>
+            {status.severity === 'critical' 
+              ? 'Research shows context usage above 15% can significantly degrade LLM reasoning quality and accuracy.'
+              : 'MCP tools are using a notable portion of context. Consider using MCPGuard for on-demand loading.'}
+          </div>
+        </div>
+      )}
+
+      {/* Token Savings Info (if guarded) */}
+      {tokenSavings && tokenSavings.tokensSaved > 0 && (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            background: 'rgba(34, 197, 94, 0.1)',
+            border: '1px solid rgba(34, 197, 94, 0.3)',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <SparklesIcon size={14} className={undefined} />
+          <span style={{ color: 'var(--text-secondary)' }}>
+            MCPGuard saves
+          </span>
+          <span style={{ color: '#22c55e', fontWeight: 600 }}>
+            {formatNumber(tokenSavings.tokensSaved)} tokens
+          </span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            ({Math.round((1 - tokenSavings.mcpGuardTokens / tokenSavings.totalTokensWithoutGuard) * 100)}% reduction)
+          </span>
+        </div>
+      )}
     </div>
   );
 };
