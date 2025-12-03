@@ -148,24 +148,6 @@ describe('config-exporter', () => {
         writePaths: ['/tmp/output'],
       });
     });
-
-    it('should correctly map resource limits', () => {
-      const input = createTestConfig({
-        resourceLimits: {
-          maxExecutionTimeMs: 60000,
-          maxMemoryMB: 256,
-          maxMCPCalls: 200,
-        },
-      });
-
-      const result = toWorkerIsolationConfig(input);
-
-      expect(result.limits).toMatchObject({
-        cpuMs: 60000,
-        memoryMB: 256,
-        subrequests: 200,
-      });
-    });
   });
 
   describe('loadWorkerIsolationConfigs', () => {

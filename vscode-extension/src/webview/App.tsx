@@ -16,6 +16,7 @@ export const App: React.FC = () => {
   const [showTestingTab, setShowTestingTab] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
   const [showAddMCPModal, setShowAddMCPModal] = useState(false);
+  const [expandedMCPs, setExpandedMCPs] = useState<Set<string>>(new Set());
 
   const isLoading = settingsLoading || serversLoading;
   const isAssessingTokens = assessingMCPs.size > 0;
@@ -27,6 +28,18 @@ export const App: React.FC = () => {
 
   const handleConfigChange = (config: MCPSecurityConfig) => {
     saveMCPConfig(config);
+  };
+
+  const handleToggleExpanded = (mcpName: string) => {
+    setExpandedMCPs(prev => {
+      const next = new Set(prev);
+      if (next.has(mcpName)) {
+        next.delete(mcpName);
+      } else {
+        next.add(mcpName);
+      }
+      return next;
+    });
   };
 
   const handleImport = () => {
@@ -176,13 +189,13 @@ export const App: React.FC = () => {
               </span>
             </div>
             {!settings.enabled ? (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                 Guarding disabled
               </div>
             ) : unguardedCount > 0 ? (
               <>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                  {unguardedCount} MCP{unguardedCount === 1 ? '' : 's'} {unguardedCount === 1 ? 'needs' : 'need'} guarding
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  {unguardedCount} MCP{unguardedCount === 1 ? '' : 's'} not guarded
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                   {unguardedServers.map(server => (
@@ -204,7 +217,7 @@ export const App: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                 All MCPs guarded ✓
               </div>
             )}
@@ -249,12 +262,12 @@ export const App: React.FC = () => {
               </span>
             </div>
             {!settings.enabled ? (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                 {guardedCount} MCP{guardedCount === 1 ? '' : 's'} configured
               </div>
             ) : guardedCount > 0 ? (
               <>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   {guardedCount} MCP{guardedCount === 1 ? '' : 's'} guarded
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -277,7 +290,7 @@ export const App: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                 No MCPs guarded yet
               </div>
             )}
@@ -348,9 +361,6 @@ export const App: React.FC = () => {
                 <BeakerIcon size={14} />
                 Test
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleImport}>
-                Re-import
-              </Button>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -364,6 +374,8 @@ export const App: React.FC = () => {
                 globalEnabled={settings.enabled}
                 onTestConnection={handleTestConnection}
                 onViewLogs={handleViewLogs}
+                isExpanded={expandedMCPs.has(server.name)}
+                onToggleExpanded={() => handleToggleExpanded(server.name)}
               />
             ))}
           </div>

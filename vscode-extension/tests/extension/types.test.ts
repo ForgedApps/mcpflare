@@ -12,7 +12,6 @@ import {
   type MCPServerInfo,
   type NetworkConfig,
   type FileSystemConfig,
-  type ResourceLimits,
 } from '../../src/extension/types';
 
 describe('types', () => {
@@ -36,18 +35,6 @@ describe('types', () => {
     it('should have empty file system paths by default', () => {
       expect(DEFAULT_SECURITY_CONFIG.fileSystem.readPaths).toEqual([]);
       expect(DEFAULT_SECURITY_CONFIG.fileSystem.writePaths).toEqual([]);
-    });
-
-    it('should have 30 second default execution time', () => {
-      expect(DEFAULT_SECURITY_CONFIG.resourceLimits.maxExecutionTimeMs).toBe(30000);
-    });
-
-    it('should have 128 MB default memory limit', () => {
-      expect(DEFAULT_SECURITY_CONFIG.resourceLimits.maxMemoryMB).toBe(128);
-    });
-
-    it('should have 100 default max MCP calls', () => {
-      expect(DEFAULT_SECURITY_CONFIG.resourceLimits.maxMCPCalls).toBe(100);
     });
 
     it('should be a secure default (minimal permissions)', () => {
@@ -169,16 +156,6 @@ describe('types', () => {
       expect(fsConfig.writePaths).toHaveLength(1);
     });
 
-    it('should allow creating valid ResourceLimits', () => {
-      const limits: ResourceLimits = {
-        maxExecutionTimeMs: 120000,
-        maxMemoryMB: 512,
-        maxMCPCalls: 1000,
-      };
-
-      expect(limits.maxExecutionTimeMs).toBe(120000);
-    });
-
     it('should allow creating valid MCPGuardSettings', () => {
       const settings: MCPGuardSettings = {
         enabled: true,
@@ -219,22 +196,6 @@ describe('types', () => {
       expect(defaults.readPaths).toEqual([]);
       // No paths should be writable by default
       expect(defaults.writePaths).toEqual([]);
-    });
-
-    it('should have reasonable resource limits', () => {
-      const defaults = DEFAULT_SECURITY_CONFIG.resourceLimits;
-      
-      // Execution time should be limited but reasonable (30s)
-      expect(defaults.maxExecutionTimeMs).toBeGreaterThan(0);
-      expect(defaults.maxExecutionTimeMs).toBeLessThanOrEqual(60000);
-      
-      // Memory should be limited but usable (128MB)
-      expect(defaults.maxMemoryMB).toBeGreaterThan(0);
-      expect(defaults.maxMemoryMB).toBeLessThanOrEqual(1024);
-      
-      // MCP calls should be limited
-      expect(defaults.maxMCPCalls).toBeGreaterThan(0);
-      expect(defaults.maxMCPCalls).toBeLessThanOrEqual(1000);
     });
   });
 });

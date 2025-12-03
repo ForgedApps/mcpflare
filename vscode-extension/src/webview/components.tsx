@@ -949,8 +949,7 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
             transform: 'translateY(-50%)',
             fontSize: '12px',
             fontWeight: 700,
-            color: 'white',
-            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+            color: 'var(--text-primary)',
             pointerEvents: 'none',
             display: 'flex',
             alignItems: 'center',
@@ -958,7 +957,7 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
           }}
         >
           <span>{formatNumber(totalTokens)}</span>
-          <span style={{ fontSize: '10px', fontWeight: 500, opacity: 0.9 }}>
+          <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-secondary)' }}>
             tokens
           </span>
         </div>
@@ -1161,7 +1160,7 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
                 %
               </span>{' '}
               reduction in token usage{' '}
-              <span style={{ color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
                 ({formatNumber(unguardedTokens - MCPGUARD_BASELINE_TOKENS)}{' '}
                 tokens)
               </span>
@@ -1234,7 +1233,7 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
               %
             </span>{' '}
             reduction{' '}
-            <span style={{ color: 'var(--text-muted)' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>
               ({formatNumber(guardedTokensOriginal - MCPGUARD_BASELINE_TOKENS)}{' '}
               tokens from {guardedMcps.length} guarded MCP
               {guardedMcps.length === 1 ? '' : 's'})
@@ -2589,7 +2588,7 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                 <div>
                   <div
                     style={{
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-secondary)',
                       fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -2604,7 +2603,7 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                 <div>
                   <div
                     style={{
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-secondary)',
                       fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -2621,7 +2620,7 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                 <div>
                   <div
                     style={{
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-secondary)',
                       fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -2637,7 +2636,7 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                   style={{
                     marginLeft: 'auto',
                     fontSize: '10px',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-secondary)',
                   }}
                 >
                   Assessed{' '}
