@@ -984,7 +984,7 @@ export class ConfigManager {
     }
 
     // If mcpguard is disabled, restore it first (but don't count it in results)
-    if (rawConfig._mcpguard_disabled?.['mcpguard']) {
+    if (rawConfig._mcpguard_disabled?.mcpguard) {
       this.enableMCP('mcpguard')
       result.mcpguardRestored = true
     }
@@ -1060,6 +1060,14 @@ export class ConfigManager {
    */
   isMCPDisabled(mcpName: string): boolean {
     return this.getDisabledMCPs().includes(mcpName)
+  }
+
+  /**
+   * Get list of disabled MCP names (alias for getDisabledMCPs for consistency)
+   * @returns Array of disabled MCP names
+   */
+  getDisabledMCPNames(): string[] {
+    return this.getDisabledMCPs()
   }
 
   /**

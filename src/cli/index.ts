@@ -11,6 +11,7 @@ import {
   isCommandBasedConfig,
   LoadMCPRequestSchema,
   type MCPConfig,
+  type MCPInstance,
 } from '../types/mcp.js'
 import { ConfigManager } from '../utils/config-manager.js'
 import { selectEnvVarsInteractively } from '../utils/env-selector.js'
@@ -18,6 +19,18 @@ import logger from '../utils/logger.js'
 import { ProgressIndicator } from '../utils/progress-indicator.js'
 import { validateInput, validateTypeScriptCode } from '../utils/validation.js'
 import { formatExecutionResult } from '../utils/wrangler-formatter.js'
+import {
+	assessCommandBasedMCP,
+	calculateTokenSavings,
+	formatTokens,
+	calculatePercentage,
+	type MCPTokenMetrics,
+} from '../utils/token-calculator.js'
+import {
+	loadTokenMetrics,
+	saveTokenMetrics,
+	invalidateMetricsCache,
+} from '../utils/settings-manager.js'
 
 // Load environment variables
 dotenv.config()
@@ -469,7 +482,12 @@ async function testTool() {
       '\nSelect MCP by number or enter MCP name: ',
     )
 
-    let selectedMCP
+    let selectedMCP: {
+      name: string
+      isLoaded: boolean
+      instance?: MCPInstance
+      config?: MCPConfig
+    } | null = null
     const selectionNum = parseInt(selection.trim(), 10)
 
     if (
@@ -482,12 +500,14 @@ async function testTool() {
     } else {
       // User entered name
       const searchTerm = selection.trim().toLowerCase()
-      selectedMCP = allMCPs.find((mcp) => mcp.name.toLowerCase() === searchTerm)
+      const found = allMCPs.find((mcp) => mcp.name.toLowerCase() === searchTerm)
 
-      if (!selectedMCP) {
+      if (!found) {
         console.error(`\n❌ MCP not found: ${selection}`)
         return
       }
+
+      selectedMCP = found
     }
 
     // If not loaded, load it first
@@ -525,10 +545,16 @@ async function testTool() {
         }
         return
       }
-    } else {
+    } else if (selectedInstance) {
       console.log(
         `\n✅ Using already loaded: ${selectedInstance.mcp_name} (${selectedInstance.mcp_id})`,
       )
+    }
+
+    // Ensure instance is loaded
+    if (!selectedInstance) {
+      console.error('\n❌ Failed to load MCP instance')
+      return
     }
 
     // Interactive tool selection and execution
@@ -922,20 +948,35 @@ async function executeCode() {
 
 async function listMCPs() {
   const instances = workerManager.listInstances()
+  const savedConfigs = configManager.getSavedConfigs()
+  const disabledMCPs = configManager.getDisabledMCPNames()
 
   if (instances.length === 0) {
     console.log('\n📭 No MCP servers loaded.')
+
+    // Show quick token savings summary even if no MCPs loaded
+    if (Object.keys(savedConfigs).length > 0) {
+      const guardedCount = disabledMCPs.length
+      if (guardedCount > 0) {
+        console.log(`\n💡 ${guardedCount} MCP${guardedCount === 1 ? '' : 's'} configured for guarding: ${disabledMCPs.join(', ')}`)
+        console.log(`   Run 'load' to load an MCP, then 'savings' to see token savings`)
+      }
+    }
     return
   }
 
   console.log('\n📋 Loaded MCP Servers:')
   instances.forEach((instance) => {
+    const isGuarded = disabledMCPs.includes(instance.mcp_name)
+    const guardStatus = isGuarded ? '🛡️  Guarded' : '⚠️  Unguarded'
+
     console.log(
       JSON.stringify(
         {
           mcp_id: instance.mcp_id,
           mcp_name: instance.mcp_name,
           status: instance.status,
+          guard_status: guardStatus,
           uptime_ms: instance.uptime_ms,
           tools_count: instance.tools.length,
           created_at: instance.created_at.toISOString(),
@@ -945,6 +986,29 @@ async function listMCPs() {
       ),
     )
   })
+
+  // Token savings summary
+  const allMCPs = Object.entries(savedConfigs).map(([name]) => ({
+    name,
+    isGuarded: disabledMCPs.includes(name),
+    metrics: tokenMetricsCache.get(name),
+    toolCount: workerManager.getMCPByName(name)?.tools.length,
+  }))
+
+  const summary = calculateTokenSavings(allMCPs)
+
+  if (summary.guardedMCPs > 0 || summary.tokensSaved > 0) {
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('Token Savings Summary:')
+    if (summary.tokensSaved > 0) {
+      const savingsPercent = calculatePercentage(summary.tokensSaved, summary.totalTokensWithoutGuard)
+      console.log(`  💰 Saving ~${formatTokens(summary.tokensSaved)} tokens (${savingsPercent}% reduction)`)
+      console.log(`  🛡️  ${summary.guardedMCPs} MCP${summary.guardedMCPs === 1 ? '' : 's'} guarded`)
+    } else {
+      console.log(`  ⚠️  No token savings yet - run 'guard --all' to protect MCPs`)
+    }
+    console.log(`\n  Run 'savings' for detailed breakdown`)
+  }
 }
 
 async function getSchema() {
@@ -1279,11 +1343,564 @@ async function deleteSavedConfig() {
 // Legacy install/restore functions removed - transparent proxy mode makes them unnecessary
 // MCPGuard automatically discovers and guards all configured MCPs without config modifications
 
+// Token metrics cache (loaded from disk, shared with VSCode extension)
+const tokenMetricsCache = loadTokenMetrics()
+
+/**
+ * Show token savings analysis
+ */
+async function showSavings() {
+	try {
+		const savedConfigs = configManager.getSavedConfigs()
+		const loadedInstances = workerManager.listInstances()
+
+		if (Object.keys(savedConfigs).length === 0 && loadedInstances.length === 0) {
+			console.log('\n📭 No MCP configurations found. Load an MCP first using the "load" command.')
+			return
+		}
+
+		// Build MCP list with guarded status
+		const allMCPs: Array<{
+			name: string
+			isGuarded: boolean
+			metrics?: MCPTokenMetrics
+			toolCount?: number
+		}> = []
+
+		// Check which MCPs are guarded (in _mcpguard_disabled section)
+		const disabledMCPs = configManager.getDisabledMCPNames()
+
+		for (const [name, entry] of Object.entries(savedConfigs)) {
+			const isGuarded = disabledMCPs.includes(name)
+			const instance = workerManager.getMCPByName(name)
+
+			// Try to get cached metrics
+			let metrics = tokenMetricsCache.get(name)
+
+			// If not cached and guarded, assess it
+			if (!metrics && isGuarded) {
+				console.log(`\nAssessing ${name}...`)
+				const assessedMetrics = await assessCommandBasedMCP(name, entry.config)
+				if (assessedMetrics) {
+					metrics = assessedMetrics
+					tokenMetricsCache.set(name, metrics)
+					// Persist to disk after assessment
+					saveTokenMetrics(tokenMetricsCache)
+				}
+			}
+
+			allMCPs.push({
+				name,
+				isGuarded,
+				metrics,
+				toolCount: instance?.tools.length,
+			})
+		}
+
+		// Add loaded instances not in saved configs
+		for (const instance of loadedInstances) {
+			if (!savedConfigs[instance.mcp_name]) {
+				allMCPs.push({
+					name: instance.mcp_name,
+					isGuarded: disabledMCPs.includes(instance.mcp_name),
+					toolCount: instance.tools.length,
+				})
+			}
+		}
+
+		const summary = calculateTokenSavings(allMCPs)
+
+		console.log('\n📊 Token Savings Analysis')
+		console.log('════════════════════════════════════════════════════════════')
+		console.log(`  Without MCPGuard: ${formatTokens(summary.totalTokensWithoutGuard)} tokens`)
+		console.log(`  With MCPGuard:    ${formatTokens(summary.mcpGuardTokens)} tokens (MCPGuard's ${summary.mcpGuardTokens} tools)`)
+		console.log('  ─────────────────────────────────────────────────────────')
+
+		if (summary.tokensSaved > 0) {
+			const savingsPercent = calculatePercentage(summary.tokensSaved, summary.totalTokensWithoutGuard)
+			console.log(`  Net Savings:      ${formatTokens(summary.tokensSaved)} tokens (${savingsPercent}% reduction)`)
+		} else {
+			console.log(`  Net Savings:      0 tokens (no MCPs guarded)`)
+		}
+
+		console.log('════════════════════════════════════════════════════════════')
+
+		// Show guarded MCPs
+		const guardedMCPs = summary.mcpBreakdown.filter(m => m.isGuarded)
+		if (guardedMCPs.length > 0) {
+			console.log('\nGuarded MCPs:')
+			for (const mcp of guardedMCPs) {
+				const assessed = mcp.isAssessed ? '' : ' (estimated)'
+				const tools = mcp.toolCount > 0 ? ` (${mcp.toolCount} tools)` : ''
+				console.log(`  ✓ ${mcp.name}: ~${formatTokens(mcp.tokens)} tokens${tools}${assessed}`)
+			}
+		}
+
+		// Show unguarded MCPs
+		const unguardedMCPs = summary.mcpBreakdown.filter(m => !m.isGuarded)
+		if (unguardedMCPs.length > 0) {
+			console.log('\nUnguarded MCPs:')
+			for (const mcp of unguardedMCPs) {
+				const mcpMetrics = tokenMetricsCache.get(mcp.name)
+				const tokens = mcpMetrics ? ` (~${formatTokens(mcpMetrics.estimatedTokens)} tokens)` : ''
+				const tools = mcp.toolCount > 0 ? ` (${mcp.toolCount} tools)` : ''
+				console.log(`  ⚠ ${mcp.name}${tools}${tokens} - Run 'guard ${mcp.name}' to save tokens`)
+			}
+			console.log(`\n💡 Tip: Run 'guard --all' to guard all MCPs and maximize token savings`)
+		}
+
+		if (summary.hasEstimates) {
+			console.log('\n💡 Note: Some MCPs are using estimated tokens. Assessments happen automatically when you load them.')
+		}
+	} catch (error: any) {
+		console.error('\n❌ Error calculating token savings:', error.message)
+		if (error.stack && verbose) {
+			console.error(error.stack)
+		}
+	}
+}
+
+/**
+ * Guard or unguard an MCP
+ */
+async function guardMCP(mcpName: string, shouldGuard: boolean) {
+	try {
+		const savedConfigs = configManager.getSavedConfigs()
+		const disabledMCPs = configManager.getDisabledMCPNames()
+
+		// Handle --all flag
+		if (mcpName === '--all') {
+			const allNames = Object.keys(savedConfigs)
+			if (allNames.length === 0) {
+				console.log('\n📭 No MCP configurations found.')
+				return
+			}
+
+			if (shouldGuard) {
+				// Guard all
+				let guardedCount = 0
+				for (const name of allNames) {
+					if (!disabledMCPs.includes(name)) {
+						configManager.disableMCP(name)
+						guardedCount++
+					}
+				}
+				console.log(`\n✓ Guarding all ${allNames.length} MCPs...`)
+				console.log(`  ${allNames.join(', ')}`)
+				if (guardedCount > 0) {
+					console.log(`\n💡 Run 'savings' to see token savings estimate`)
+				}
+			} else {
+				// Unguard all
+				let unguardedCount = 0
+				for (const name of allNames) {
+					if (disabledMCPs.includes(name)) {
+						configManager.enableMCP(name)
+						unguardedCount++
+					}
+				}
+				console.log(`\n⚠ Removed MCPGuard protection from all ${unguardedCount} MCPs`)
+				console.log(`  All MCPs now have direct access to your system`)
+			}
+			return
+		}
+
+		// Single MCP guard/unguard
+		if (!savedConfigs[mcpName]) {
+			console.error(`\n❌ MCP not found: ${mcpName}`)
+			console.log('\nAvailable MCPs:')
+			Object.keys(savedConfigs).forEach(name => console.log(`  - ${name}`))
+			return
+		}
+
+		const isCurrentlyGuarded = disabledMCPs.includes(mcpName)
+
+		if (shouldGuard) {
+			if (isCurrentlyGuarded) {
+				console.log(`\n${mcpName} is already guarded`)
+				return
+			}
+
+			configManager.disableMCP(mcpName)
+			console.log(`\n✓ ${mcpName} moved to MCPGuard protection`)
+			console.log(`  Network: Isolated (use 'configure ${mcpName}' to allow domains)`)
+			console.log(`  Filesystem: Isolated (use 'configure ${mcpName}' to allow paths)`)
+
+			// Try to show token savings
+			const config = savedConfigs[mcpName].config
+			const metrics = await assessCommandBasedMCP(mcpName, config)
+			if (metrics) {
+				tokenMetricsCache.set(mcpName, metrics)
+				// Persist to disk after assessment
+				saveTokenMetrics(tokenMetricsCache)
+				console.log(`  Token savings: ~${formatTokens(metrics.estimatedTokens)} tokens`)
+			}
+		} else {
+			if (!isCurrentlyGuarded) {
+				console.log(`\n${mcpName} is not currently guarded`)
+				return
+			}
+
+			configManager.enableMCP(mcpName)
+			// Invalidate cache when unguarding (metrics may change)
+			invalidateMetricsCache(mcpName)
+			console.log(`\n⚠ ${mcpName} removed from MCPGuard protection`)
+			console.log(`  This MCP now has direct access to your system`)
+		}
+	} catch (error: any) {
+		console.error(`\n❌ Error: ${error.message}`)
+		if (error.stack && verbose) {
+			console.error(error.stack)
+		}
+	}
+}
+
+/**
+ * Diagnose MCP connection issues
+ */
+async function diagnoseMCP() {
+	try {
+		const savedConfigs = configManager.getSavedConfigs()
+		const savedNames = Object.keys(savedConfigs)
+
+		if (savedNames.length === 0) {
+			console.log('\n📭 No MCP configurations found.')
+			return
+		}
+
+		console.log('\n📋 Available MCP Configurations:')
+		savedNames.forEach((name, index) => {
+			console.log(`  ${index + 1}. ${name}`)
+		})
+
+		const selection = await question(
+			'\nSelect MCP to diagnose by number or name (or "exit" to quit): ',
+		)
+		const trimmed = selection.trim()
+
+		if (trimmed.toLowerCase() === 'exit') {
+			return
+		}
+
+		let selectedName: string | null = null
+		const selectionNum = parseInt(trimmed, 10)
+
+		if (
+			!Number.isNaN(selectionNum) &&
+			selectionNum >= 1 &&
+			selectionNum <= savedNames.length
+		) {
+			selectedName = savedNames[selectionNum - 1]
+		} else {
+			selectedName =
+				savedNames.find(
+					(name) => name.toLowerCase() === trimmed.toLowerCase(),
+				) || null
+		}
+
+		if (!selectedName) {
+			console.error(`\n❌ MCP not found: ${selection}`)
+			return
+		}
+
+		const savedConfig = configManager.getSavedConfig(selectedName)
+		if (!savedConfig) {
+			console.error(`\n❌ Configuration not found for: ${selectedName}`)
+			return
+		}
+
+		// Resolve environment variables
+		const resolvedConfig = configManager.resolveEnvVarsInObject(
+			savedConfig,
+		) as MCPConfig
+
+		console.log(`\n🔍 Diagnosing ${selectedName}...`)
+		console.log('')
+
+		// Step 1: Validate configuration
+		console.log('[1/4] Validate Configuration')
+		if ('command' in resolvedConfig) {
+			console.log(`  ✓ Command: ${resolvedConfig.command}`)
+			if (resolvedConfig.args) {
+				console.log(`    Args: ${resolvedConfig.args.join(' ')}`)
+			}
+			const envKeys = Object.keys(resolvedConfig.env || {})
+			if (envKeys.length > 0) {
+				console.log(`    Env vars: ${envKeys.join(', ')}`)
+			}
+		} else if ('url' in resolvedConfig) {
+			console.log(`  ✓ URL: ${resolvedConfig.url}`)
+			if (resolvedConfig.headers) {
+				const headerKeys = Object.keys(resolvedConfig.headers)
+				console.log(`    Headers: ${headerKeys.join(', ')}`)
+			}
+		} else {
+			console.log('  ✗ No command or URL configured')
+			return
+		}
+		console.log('')
+
+		// Step 2: Test MCP connection
+		console.log('[2/4] Test MCP Connection')
+
+		if ('command' in resolvedConfig) {
+			// Command-based MCP
+			console.log('  Testing command-based MCP...')
+
+			const transport = new StdioClientTransport({
+				command: resolvedConfig.command,
+				args: resolvedConfig.args || [],
+				env: resolvedConfig.env,
+			})
+
+			const client = new Client(
+				{ name: 'mcpguard-cli-diagnose', version: '1.0.0' },
+				{ capabilities: {} },
+			)
+
+			try {
+				const progress = new ProgressIndicator()
+				;(progress as any).steps = [
+					{ name: 'CLI', status: 'pending' },
+					{ name: 'MCP SDK Client', status: 'pending' },
+					{ name: 'Target MCP', status: 'pending' },
+				]
+
+				progress.updateStep(0, 'running')
+				progress.updateStep(1, 'running')
+
+				await client.connect(transport, { timeout: 10000 })
+
+				progress.updateStep(0, 'success')
+				progress.updateStep(1, 'success')
+				progress.updateStep(2, 'running')
+				progress.showFinal()
+				console.log('  ✓ Connected successfully\n')
+
+				// Step 3: Fetch tools
+				console.log('[3/4] Fetch Tools List')
+				const toolsResponse = await client.listTools()
+				const tools = toolsResponse.tools
+
+				progress.updateStep(2, 'success')
+				progress.showFinal()
+				console.log(`  ✓ Found ${tools.length} tools\n`)
+
+				// Step 4: Summary
+				console.log('[4/4] Summary')
+				console.log(`  ✓ MCP "${selectedName}" is working correctly`)
+				console.log(`  ✓ Available tools: ${tools.length}`)
+				if (tools.length > 0) {
+					console.log('\n  Top tools:')
+					tools.slice(0, 5).forEach((tool) => {
+						console.log(`    - ${tool.name}${tool.description ? `: ${tool.description}` : ''}`)
+					})
+					if (tools.length > 5) {
+						console.log(`    ... and ${tools.length - 5} more`)
+					}
+				}
+
+				await transport.close()
+			} catch (error: any) {
+				console.log(`  ✗ Connection failed: ${error.message}\n`)
+
+				console.log('[3/4] Troubleshooting')
+				console.log('  Possible issues:')
+				console.log('    - Command not found or not executable')
+				console.log('    - Missing dependencies (npm packages, etc.)')
+				console.log('    - Incorrect environment variables')
+				console.log('    - MCP server crashed on startup')
+				console.log('\n  Try:')
+				console.log(`    1. Run the command manually: ${resolvedConfig.command} ${resolvedConfig.args?.join(' ') || ''}`)
+				console.log('    2. Check MCP server logs for errors')
+				console.log('    3. Verify all required environment variables are set')
+			}
+		} else if ('url' in resolvedConfig) {
+			// URL-based MCP - not implemented in CLI yet
+			console.log('  ⚠️  URL-based MCP diagnostics not yet supported in CLI')
+			console.log(`  URL: ${resolvedConfig.url}`)
+			console.log('\n  To test URL-based MCPs, use the VSCode extension or test-direct command')
+		}
+	} catch (error: any) {
+		console.error('\n❌ Error:', error.message)
+		if (error.stack && verbose) {
+			console.error(error.stack)
+		}
+	}
+}
+
+/**
+ * Configure MCP security settings
+ * Note: This is a simplified CLI version. Full configuration UI is available in the VS Code extension.
+ */
+async function configureMCP() {
+	try {
+		const savedConfigs = configManager.getSavedConfigs()
+		const disabledMCPs = configManager.getDisabledMCPNames()
+		const savedNames = Object.keys(savedConfigs)
+
+		if (savedNames.length === 0) {
+			console.log('\n📭 No MCP configurations found.')
+			return
+		}
+
+		console.log('\n📋 Available MCP Configurations:')
+		savedNames.forEach((name, index) => {
+			const isGuarded = disabledMCPs.includes(name)
+			const guardStatus = isGuarded ? '🛡️  Guarded' : '⚠️  Unguarded'
+			console.log(`  ${index + 1}. ${name} ${guardStatus}`)
+		})
+
+		const selection = await question(
+			'\nSelect MCP to configure by number or name (or "exit" to quit): ',
+		)
+		const trimmed = selection.trim()
+
+		if (trimmed.toLowerCase() === 'exit') {
+			return
+		}
+
+		let selectedName: string | null = null
+		const selectionNum = parseInt(trimmed, 10)
+
+		if (
+			!Number.isNaN(selectionNum) &&
+			selectionNum >= 1 &&
+			selectionNum <= savedNames.length
+		) {
+			selectedName = savedNames[selectionNum - 1]
+		} else {
+			selectedName =
+				savedNames.find(
+					(name) => name.toLowerCase() === trimmed.toLowerCase(),
+				) || null
+		}
+
+		if (!selectedName) {
+			console.error(`\n❌ MCP not found: ${selection}`)
+			return
+		}
+
+		const isGuarded = disabledMCPs.includes(selectedName)
+
+		console.log(`\n⚙️  Configuration: ${selectedName}`)
+		console.log('════════════════════════════════════════════════════════════')
+		console.log(`  Status: ${isGuarded ? '🛡️  Guarded (Protected by MCPGuard)' : '⚠️  Unguarded (Direct access)'}`)
+		console.log('')
+
+		if (!isGuarded) {
+			console.log('  ⚠️  This MCP is not guarded.')
+			console.log('  Network: Direct access (no isolation)')
+			console.log('  Filesystem: Direct access (no isolation)')
+			console.log('')
+			console.log(`  Run 'guard ${selectedName}' to enable MCPGuard protection.`)
+			return
+		}
+
+		// Show current configuration (defaults for CLI - full config in extension)
+		console.log('  Current Settings (CLI defaults):')
+		console.log('    Network: Isolated (no external network access)')
+		console.log('    Filesystem: Isolated (no filesystem access)')
+		console.log('    Resource Limits:')
+		console.log('      - Max execution time: 30000ms')
+		console.log('      - Max memory: 128MB')
+		console.log('      - Max MCP calls: 100')
+		console.log('')
+		console.log('  ℹ️  Advanced Configuration:')
+		console.log('     Network allowlists, filesystem paths, and custom resource')
+		console.log('     limits can be configured using the VSCode extension.')
+		console.log('')
+		console.log('     For now, the CLI uses secure defaults:')
+		console.log('       • Complete network isolation')
+		console.log('       • No filesystem access')
+		console.log('       • Standard resource limits')
+		console.log('')
+		console.log('  Quick Actions:')
+		console.log(`    • unguard ${selectedName}  - Remove protection (not recommended)`)
+		console.log(`    • test ${selectedName}      - Test this MCP's tools`)
+		console.log(`    • diagnose ${selectedName}  - Test connection`)
+	} catch (error: any) {
+		console.error('\n❌ Error:', error.message)
+		if (error.stack && verbose) {
+			console.error(error.stack)
+		}
+	}
+}
+
+/**
+ * Show status overview
+ */
+async function showStatus() {
+	try {
+		const savedConfigs = configManager.getSavedConfigs()
+		const loadedInstances = workerManager.listInstances()
+		const disabledMCPs = configManager.getDisabledMCPNames()
+		const sourceName = configManager.getConfigSourceDisplayName()
+
+		const totalMCPs = Object.keys(savedConfigs).length
+		const guardedCount = disabledMCPs.length
+		const unguardedCount = totalMCPs - guardedCount
+		const loadedCount = loadedInstances.length
+
+		console.log('\nMCP Guard Status')
+		console.log('════════════════════════════════════════════════════════════')
+
+		// Global state
+		const globalEnabled = true // MCPGuard is always enabled in CLI mode
+		console.log(`  Global Protection: ${globalEnabled ? '✓ ENABLED' : '✗ DISABLED'}`)
+
+		// MCP counts
+		console.log(`  Total MCPs: ${totalMCPs} (${guardedCount} guarded, ${unguardedCount} unguarded)`)
+		console.log(`  Loaded MCPs: ${loadedCount}`)
+
+		// Token savings (quick estimate)
+		const allMCPs = Object.entries(savedConfigs).map(([name]) => ({
+			name,
+			isGuarded: disabledMCPs.includes(name),
+			metrics: tokenMetricsCache.get(name),
+		}))
+		const summary = calculateTokenSavings(allMCPs)
+
+		if (summary.tokensSaved > 0) {
+			const savingsPercent = calculatePercentage(summary.tokensSaved, summary.totalTokensWithoutGuard)
+			console.log(`  Token Savings: ~${formatTokens(summary.tokensSaved)} tokens (${savingsPercent}% reduction)`)
+		} else {
+			console.log(`  Token Savings: 0 tokens (no MCPs guarded)`)
+		}
+
+		console.log(`  IDE Config: ${sourceName}`)
+		console.log('════════════════════════════════════════════════════════════')
+
+		// Quick actions
+		console.log('\nQuick Actions:')
+		if (unguardedCount > 0) {
+			console.log('  • guard --all        - Protect all MCPs')
+		}
+		console.log('  • savings            - View detailed token analysis')
+		if (totalMCPs > 0) {
+			console.log('  • list               - List all loaded MCPs')
+		}
+		if (guardedCount > 0) {
+			const firstGuarded = disabledMCPs[0]
+			console.log(`  • test ${firstGuarded}     - Test a guarded MCP`)
+		}
+	} catch (error: any) {
+		console.error('\n❌ Error:', error.message)
+		if (error.stack && verbose) {
+			console.error(error.stack)
+		}
+	}
+}
+
 function showHelp() {
   console.log(`
 Available commands:
-  install       - Disable all MCPs except mcpguard (run this after adding MCPGuard to IDE config)
-  restore       - Re-enable all disabled MCPs
+  status        - Show at-a-glance MCP Guard status (counts, token savings, quick actions)
+  savings       - Detailed token savings analysis with per-MCP breakdown
+  guard <mcp>   - Enable MCPGuard protection for an MCP (use --all for all MCPs)
+  unguard <mcp> - Disable MCPGuard protection for an MCP (use --all for all MCPs)
+  configure     - View security configuration for an MCP
+  diagnose      - Step-by-step connection diagnostics for an MCP
   load          - Load an MCP server (shows saved configs, auto-saves new ones)
   test          - Interactively test MCP tools (select tool, enter args, execute via Wrangler)
   test-direct   - Test MCP directly without Wrangler/Worker isolation (uses saved configs)
@@ -1298,6 +1915,13 @@ Available commands:
   help          - Show this help message
   exit          - Exit the CLI
 
+Common workflows:
+  status                - Quick overview of your setup
+  guard --all           - Protect all MCPs and maximize token savings
+  savings               - See how many tokens you're saving
+  diagnose              - Troubleshoot MCP connection issues
+  test github           - Test a specific MCP's tools interactively
+
 Usage:
   npm run cli              - Run CLI (quiet mode, only warnings/errors)
   npm run cli -- --verbose - Run CLI with detailed logs
@@ -1306,9 +1930,40 @@ Usage:
 }
 
 async function handleCommand(command: string) {
-  const cmd = command.trim().toLowerCase()
+  const input = command.trim()
+  const [cmd, ...args] = input.toLowerCase().split(/\s+/)
 
   switch (cmd) {
+    case 'status':
+      await showStatus()
+      break
+    case 'savings':
+      await showSavings()
+      break
+    case 'configure':
+      await configureMCP()
+      break
+    case 'diagnose':
+      await diagnoseMCP()
+      break
+    case 'guard':
+      if (args.length === 0) {
+        console.log('\n❌ Usage: guard <mcp-name> or guard --all')
+        console.log('Example: guard github')
+        console.log('Example: guard --all')
+      } else {
+        await guardMCP(args[0], true)
+      }
+      break
+    case 'unguard':
+      if (args.length === 0) {
+        console.log('\n❌ Usage: unguard <mcp-name> or unguard --all')
+        console.log('Example: unguard github')
+        console.log('Example: unguard --all')
+      } else {
+        await guardMCP(args[0], false)
+      }
+      break
     case 'load':
       await loadMCP()
       break

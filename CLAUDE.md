@@ -25,7 +25,9 @@ npm run build
 npm run dev
 
 # Interactive CLI for testing
-npm run cli
+npm run cli              # Standard mode
+npm run cli -- --verbose # Debug mode with detailed logs
+npm run cli -- -v        # Short form for verbose
 
 # Linting and formatting
 npm run lint          # Check code quality
@@ -77,10 +79,12 @@ npm run benchmark     # Run GitHub MCP comparison benchmark
      - `index.ts`: Extension entry point and activation
      - `webview-provider.ts`: Manages webview panel, message passing, config I/O
      - `config-exporter.ts`: Exports configs to/from IDE config files
+     - `token-assessor.ts`: Assesses token usage and calculates savings for MCPs
+     - `types.ts`: TypeScript type definitions
    - `src/webview/`: Extension frontend (React)
-     - `App.tsx`: Main UI component, manages expansion state
-     - `components.tsx`: Reusable UI components (MCPCard, CollapsibleSection, etc.)
-     - `hooks.ts`: React hooks for state management and message passing
+     - `App.tsx`: Main UI component, manages expansion state, token savings display
+     - `components.tsx`: Reusable UI components (MCPCard, TokenSavingsBadge, ConnectionTestModal, etc.)
+     - `hooks.ts`: React hooks for state management, token assessment, connection testing
      - `types.ts`: TypeScript type definitions shared between frontend/backend
 
 4. **CLI** (`src/cli/`)
@@ -163,6 +167,8 @@ The VSCode extension uses modern React patterns for optimal UX:
 **Component Hierarchy**:
 ```
 App.tsx (expansion state: Set<string>)
+  ├─ TokenSavingsBadge (context window visualization)
+  ├─ TestingTab (security testing suite)
   └─ MCPCard (controlled isExpanded prop)
       ├─ Header (click handler checks target.closest('[data-config-section]'))
       └─ Config Sections (when expanded)
@@ -182,6 +188,96 @@ App.tsx (expansion state: Set<string>)
 - Optimistic updates eliminate ~200-500ms perceived latency
 - No full server list refresh on config save (was causing flashing)
 - React keys stable (`server.name`) to prevent component re-mounting
+- Token assessments are cached (one-time per MCP)
+
+**Key Features**:
+- **Token Savings Assessment**: Spawns MCPs temporarily to fetch tool schemas, calculates context window savings
+  - Uses `token-assessor.ts` to spawn command-based MCPs via stdio or fetch URL-based MCPs via HTTP
+  - Caches results in settings to avoid repeated assessments
+  - Shows ~500 token baseline for MCPGuard vs thousands for individual MCPs
+  - Handles assessment failures with detailed diagnostics (auth errors, timeouts, etc.)
+- **Connection Diagnostics**: Step-by-step connection testing for URL-based MCPs
+  - Tests network connectivity, MCP initialize, and tools/list requests
+  - Captures full request/response data for troubleshooting
+  - Handles Streamable HTTP session state (Mcp-Session-Id header)
+- **Security Testing**: Interactive test suite to verify isolation
+  - Categories: Legitimate calls, network isolation, code injection, filesystem isolation
+  - Generates TypeScript code for each test, executes via Worker
+  - Shows expected vs actual results with explanations
+- **Context Window Visualization**: Bar chart showing token usage as percentage of total context window
+  - Configurable context window size (default 200k tokens)
+  - Shows guarded vs unguarded MCP token usage
+- **Add MCP Modal**: UI for adding new MCPs without editing config files manually
+  - Supports both command-based and URL-based MCPs
+  - Interactive form with validation
+
+### CLI (Interactive Command-Line Interface)
+
+The CLI provides a text-based interface for managing MCPs, testing tools, and analyzing token savings. Designed for Claude Code and other AI coding tools that work via command line.
+
+**Available Commands**:
+- `status` - Show at-a-glance MCP Guard status (enabled state, loaded MCPs, token savings)
+- `savings` - Detailed token savings analysis with per-MCP breakdown
+- `guard <mcp>` / `unguard <mcp>` - Enable/disable MCP Guard protection for specific MCPs
+- `load` - Load an MCP server (interactive, shows saved configs, auto-saves new ones)
+- `test` - Interactively test MCP tools (select tool, enter args, execute via Wrangler)
+- `diagnose <mcp>` - Step-by-step connection diagnostics for troubleshooting
+- `test-direct` - Test MCP directly without Wrangler/Worker isolation (uses saved configs)
+- `execute` - Execute custom TypeScript code against a loaded MCP
+- `list` - List all loaded MCP servers (includes token savings summary)
+- `saved` - List all saved MCP configurations from IDE config file
+- `delete` - Delete a saved MCP configuration
+- `schema` - Get TypeScript API schema for an MCP
+- `unload` - Unload an MCP server (optionally remove from saved configs)
+- `conflicts` - Check for IDE MCP configuration conflicts
+- `metrics` - Show performance metrics (load times, executions, token savings)
+- `help` - Show command list
+- `exit` - Exit the CLI
+
+**Key CLI Workflows**:
+
+1. **Quick Status Check** (ideal for AI agents):
+   ```bash
+   mcpguard> status
+   # Shows: global state, MCP counts, token savings, quick actions
+   ```
+
+2. **Guard All MCPs** (maximize token savings):
+   ```bash
+   mcpguard> guard --all
+   # Moves all MCPs to MCPGuard protection, shows savings
+   ```
+
+3. **Analyze Token Savings**:
+   ```bash
+   mcpguard> savings
+   # Detailed breakdown: per-MCP savings, context window usage
+   ```
+
+4. **Troubleshoot Connection Issues**:
+   ```bash
+   mcpguard> diagnose github
+   # Step-by-step test: DNS → Initialize → Tools List
+   # Shows full request/response data for debugging
+   ```
+
+5. **Test Tool Execution**:
+   ```bash
+   mcpguard> test
+   # Interactive: select MCP → select tool → enter args → execute
+   # Runs through full Worker isolation stack
+   ```
+
+**CLI vs Extension**:
+- **CLI**: Text-based, ideal for Claude Code and headless workflows. Token savings displayed in text format.
+- **Extension**: Visual UI with charts, optimistic updates, inline configuration forms. Easier for manual management.
+- **Both**: Share same backend (`ConfigManager`, `WorkerManager`), use same IDE config files
+
+**Design Principles**:
+- **Information Density**: Show maximum useful info in minimal space (no unnecessary whitespace)
+- **Workflow Efficiency**: Common tasks require minimal commands (e.g., `guard --all`)
+- **AI-Friendly Output**: Structured text output that AI agents can parse and act on
+- **Progressive Disclosure**: `list` shows summary, `savings` shows details, `diagnose` shows diagnostics
 
 ### Security Model
 
