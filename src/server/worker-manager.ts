@@ -24,6 +24,7 @@ import type {
   MCPConfig,
   MCPInstance,
   MCPTool,
+  MCPPrompt,
 } from '../types/mcp.js'
 import { isCommandBasedConfig } from '../types/mcp.js'
 import type { WorkerCode } from '../types/worker.js'
@@ -35,6 +36,10 @@ import {
 import logger from '../utils/logger.js'
 import { ProgressIndicator } from '../utils/progress-indicator.js'
 import { formatWranglerError } from '../utils/wrangler-formatter.js'
+import {
+  saveCachedSchema,
+  getCachedSchema,
+} from '../utils/mcp-registry.js'
 import { SchemaConverter } from './schema-converter.js'
 
 /**
@@ -42,6 +47,7 @@ import { SchemaConverter } from './schema-converter.js'
  */
 interface CachedMCPSchema {
   tools: MCPTool[]
+  prompts?: MCPPrompt[]
   typescriptApi: string
   configHash: string // Hash of the config to detect changes
   cachedAt: Date
@@ -267,7 +273,7 @@ export class WorkerManager {
   /**
    * Generate a hash of the MCP config for caching
    */
-  private hashConfig(mcpName: string, config: MCPConfig): string {
+  public hashConfig(mcpName: string, config: MCPConfig): string {
     const configString = JSON.stringify({ mcpName, config })
     return createHash('sha256')
       .update(configString)
@@ -529,6 +535,123 @@ export class WorkerManager {
   }
 
   /**
+   * Load MCP prompt schema only (without spawning full process)
+   * Used for transparent proxy mode to discover available prompts
+   * Returns cached prompts if available, otherwise fetches and caches them
+   */
+  async loadMCPPromptsOnly(
+    mcpName: string,
+    config: MCPConfig,
+  ): Promise<MCPPrompt[]> {
+    const cacheKey = this.getCacheKey(mcpName, config)
+    const configHash = this.hashConfig(mcpName, config)
+
+    // Check cache first
+    const cached = this.schemaCache.get(cacheKey)
+    if (cached && cached.configHash === configHash && cached.prompts) {
+      logger.debug(
+        { mcpName, cacheKey, promptCount: cached.prompts.length },
+        'Using cached MCP prompts for transparent proxy',
+      )
+      return cached.prompts
+    }
+
+    // Not cached - need to fetch prompts
+    // Create temporary client to fetch prompts
+    let client: Client | null = null
+    let transport: StdioClientTransport | StreamableHTTPClientTransport | null =
+      null
+
+    try {
+      if (isCommandBasedConfig(config)) {
+        transport = new StdioClientTransport({
+          command: config.command,
+          args: config.args || [],
+          env: config.env,
+        })
+      } else {
+        // URL-based MCP: use HTTP transport
+        const url = new URL(config.url)
+        const transportOptions: {
+          requestInit?: RequestInit
+        } = {}
+
+        // Add custom headers if provided
+        if (config.headers) {
+          transportOptions.requestInit = {
+            headers: config.headers,
+          }
+        }
+
+        transport = new StreamableHTTPClientTransport(url, transportOptions)
+      }
+
+      client = new Client(
+        {
+          name: 'mcpguard',
+          version: '0.1.0',
+        },
+        {
+          capabilities: {},
+        },
+      )
+
+      // Connect to fetch prompts
+      await client.connect(transport, { timeout: 10000 })
+
+      // Fetch prompts
+      const promptsResponse = await client.listPrompts()
+
+      // Convert to MCPPrompt format
+      const prompts: MCPPrompt[] = promptsResponse.prompts.map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments,
+      }))
+
+      // Update cache with prompts (preserve existing tools if cached)
+      const existingCache = this.schemaCache.get(cacheKey)
+      this.schemaCache.set(cacheKey, {
+        tools: existingCache?.tools || [],
+        typescriptApi: existingCache?.typescriptApi || '',
+        prompts,
+        configHash,
+        cachedAt: new Date(),
+      })
+
+      logger.info(
+        { mcpName, cacheKey, promptCount: prompts.length },
+        'Fetched and cached MCP prompts for transparent proxy',
+      )
+
+      return prompts
+    } catch (error: unknown) {
+      logger.warn(
+        { error, mcpName },
+        'Failed to fetch MCP prompts for transparent proxy',
+      )
+      // Return empty array on error - transparent proxy will skip this MCP
+      return []
+    } finally {
+      // Clean up temporary client and transport
+      if (client) {
+        try {
+          await client.close()
+        } catch (error: unknown) {
+          logger.debug({ error }, 'Error closing temporary MCP client')
+        }
+      }
+      if (transport) {
+        try {
+          await transport.close()
+        } catch (error: unknown) {
+          logger.debug({ error }, 'Error closing temporary MCP transport')
+        }
+      }
+    }
+  }
+
+  /**
    * Load an MCP server into a Worker isolate
    */
   async loadMCP(mcpName: string, config: MCPConfig): Promise<MCPInstance> {
@@ -548,28 +671,59 @@ export class WorkerManager {
     try {
       // Step 1: Check cache first - if we have cached schema, we can skip process initialization wait
       const cached = this.schemaCache.get(cacheKey)
-      const hasCachedSchema =
-        cached && cached.configHash === this.hashConfig(mcpName, config)
+      const configHash = this.hashConfig(mcpName, config)
+      const hasCachedSchema = cached && cached.configHash === configHash
+
+      // Check persistent cache if not in memory
+      if (!hasCachedSchema) {
+        const persistentCached = getCachedSchema(mcpName, configHash)
+        if (persistentCached) {
+          // Load into in-memory cache
+          this.schemaCache.set(cacheKey, {
+            tools: persistentCached.tools as MCPTool[],
+            typescriptApi:
+              persistentCached.typescriptApi ||
+              this.schemaConverter.convertToTypeScript(
+                persistentCached.tools as MCPTool[],
+              ),
+            configHash: persistentCached.configHash,
+            cachedAt: new Date(persistentCached.cachedAt),
+          })
+          logger.info(
+            { mcpId, mcpName, toolCount: persistentCached.toolCount },
+            'Loaded MCP schema from persistent cache',
+          )
+        }
+      }
+
+      // Re-check cache after loading from persistent
+      const cachedAfterLoad = this.schemaCache.get(cacheKey)
+      const hasCachedSchemaAfterLoad =
+        cachedAfterLoad && cachedAfterLoad.configHash === configHash
 
       // Step 2: If we have cached schema and it's a command-based MCP, we still need a process for execution
       // URL-based MCPs don't spawn processes - they use HTTP connections
-      if (hasCachedSchema && isCommandBasedConfig(config)) {
+      if (hasCachedSchemaAfterLoad && isCommandBasedConfig(config)) {
         const mcpProcess = await this.startMCPProcess(config, true)
         this.mcpProcesses.set(mcpId, mcpProcess)
       }
 
       // Step 3: Get schema and TypeScript API (from cache or fetch)
       let tools: MCPTool[]
+      let prompts: MCPPrompt[]
       let typescriptApi: string
 
-      if (hasCachedSchema) {
+      if (hasCachedSchemaAfterLoad) {
         // Use cached schema and TypeScript API
         logger.info({ mcpId, mcpName, cacheKey }, 'Using cached MCP schema')
-        tools = cached?.tools
-        typescriptApi = cached?.typescriptApi
+        tools = cachedAfterLoad?.tools
+        prompts = cachedAfterLoad?.prompts || []
+        typescriptApi = cachedAfterLoad?.typescriptApi
       } else {
         // Step 4: Connect to MCP server and fetch schema using real MCP protocol
-        tools = await this.fetchMCPSchema(mcpName, config, mcpId)
+        const schema = await this.fetchMCPSchema(mcpName, config, mcpId)
+        tools = schema.tools
+        prompts = schema.prompts
 
         // Step 5: Convert schema to TypeScript API
         typescriptApi = this.schemaConverter.convertToTypeScript(tools)
@@ -577,14 +731,29 @@ export class WorkerManager {
         // Cache the schema and TypeScript API
         this.schemaCache.set(cacheKey, {
           tools,
+          prompts,
           typescriptApi,
           configHash: this.hashConfig(mcpName, config),
           cachedAt: new Date(),
         })
         logger.debug(
-          { mcpId, mcpName, cacheKey, toolCount: tools.length },
+          { mcpId, mcpName, cacheKey, toolCount: tools.length, promptCount: prompts.length },
           'Cached MCP schema',
         )
+
+        // Also save to persistent cache
+        saveCachedSchema({
+          mcpName,
+          configHash: this.hashConfig(mcpName, config),
+          tools,
+          prompts,
+          toolNames: tools.map((t) => t.name),
+          promptNames: prompts.map((p) => p.name),
+          toolCount: tools.length,
+          promptCount: prompts.length,
+          // typescriptApi omitted to save disk space (can regenerate if needed)
+          cachedAt: new Date().toISOString(),
+        })
       }
 
       // Step 5: Create Worker isolate configuration
@@ -599,6 +768,7 @@ export class WorkerManager {
         worker_id: workerId,
         typescript_api: typescriptApi,
         tools,
+        prompts,
         created_at: new Date(),
         uptime_ms: 0,
       }
@@ -826,6 +996,13 @@ export class WorkerManager {
     return instances.find((instance) => instance.mcp_name === mcpName)
   }
 
+  /**
+   * Get MCP client for direct protocol calls (e.g., getPrompt)
+   */
+  getMCPClient(mcpId: string): Client | undefined {
+    return this.mcpClients.get(mcpId)
+  }
+
   // Private helper methods
 
   private async startMCPProcess(
@@ -1022,7 +1199,7 @@ export class WorkerManager {
     mcpName: string,
     config: MCPConfig,
     mcpId: string,
-  ): Promise<MCPTool[]> {
+  ): Promise<{ tools: MCPTool[]; prompts: MCPPrompt[] }> {
     logger.info({ mcpId, mcpName }, 'Fetching MCP schema using real protocol')
 
     try {
@@ -1137,7 +1314,37 @@ export class WorkerManager {
         },
       }))
 
-      return tools
+      // List prompts from the MCP server
+      const listPromptsStartTime = Date.now()
+      let prompts: MCPPrompt[] = []
+      try {
+        const promptsResponse = await client.listPrompts()
+        const listPromptsTime = Date.now() - listPromptsStartTime
+        logger.debug(
+          {
+            mcpId,
+            mcpName,
+            promptCount: promptsResponse.prompts.length,
+            listPromptsTimeMs: listPromptsTime,
+          },
+          'Fetched prompts from MCP server',
+        )
+
+        // Convert MCP SDK prompt format to our MCPPrompt format
+        prompts = promptsResponse.prompts.map((prompt) => ({
+          name: prompt.name,
+          description: prompt.description,
+          arguments: prompt.arguments,
+        }))
+      } catch (error: unknown) {
+        // Some MCPs may not support prompts - that's okay
+        logger.debug(
+          { mcpId, mcpName, error },
+          'MCP does not support prompts or prompts fetch failed',
+        )
+      }
+
+      return { tools, prompts }
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error'

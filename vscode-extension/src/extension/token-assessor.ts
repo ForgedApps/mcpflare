@@ -14,6 +14,11 @@ import type {
   TokenMetricsCache,
   TokenSavingsSummary,
 } from './types'
+import {
+  detectInstalledVersion,
+  extractPackageName,
+  isNpxCommand,
+} from './version-checker'
 
 /**
  * Tool schema format from MCP protocol
@@ -605,6 +610,18 @@ async function assessCommandBasedMCP(
                 schemaChars,
                 estimatedTokens,
                 assessedAt: new Date().toISOString(),
+              }
+
+              // Capture package name for npx-based MCPs (instant, no performance impact)
+              // Actual version detection will happen async on extension load
+              if (isNpxCommand(server.command)) {
+                const packageName = extractPackageName(server.args)
+                if (packageName) {
+                  metrics.packageName = packageName
+                  console.log(
+                    `Token Assessor: ${server.name} - captured package name: ${packageName}`,
+                  )
+                }
               }
 
               console.log(

@@ -30,6 +30,58 @@ export const MCPToolSchema = z.object({
 
 export type MCPTool = z.infer<typeof MCPToolSchema>
 
+// MCP Prompt Argument Schema
+export const MCPPromptArgumentSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+})
+
+export type MCPPromptArgument = z.infer<typeof MCPPromptArgumentSchema>
+
+// MCP Prompt Schema
+export const MCPPromptSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  arguments: z.array(MCPPromptArgumentSchema).optional(),
+})
+
+export type MCPPrompt = z.infer<typeof MCPPromptSchema>
+
+// MCP Prompt Message Content Schema
+export const MCPPromptMessageContentSchema = z.union([
+  z.object({
+    type: z.literal('text'),
+    text: z.string(),
+  }),
+  z.object({
+    type: z.literal('image'),
+    data: z.string(),
+    mimeType: z.string(),
+  }),
+  z.object({
+    type: z.literal('resource'),
+    resource: z.object({
+      uri: z.string(),
+      mimeType: z.string().optional(),
+      text: z.string().optional(),
+    }),
+  }),
+])
+
+export type MCPPromptMessageContent = z.infer<typeof MCPPromptMessageContentSchema>
+
+// MCP Prompt Message Schema
+export const MCPPromptMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.union([
+    MCPPromptMessageContentSchema,
+    z.array(MCPPromptMessageContentSchema),
+  ]),
+})
+
+export type MCPPromptMessage = z.infer<typeof MCPPromptMessageSchema>
+
 // MCP Configuration
 // Supports both command-based (local) and url-based (remote) MCP servers
 export const MCPConfigSchema = z.union([
@@ -133,6 +185,7 @@ export interface MCPInstance {
   worker_id?: string
   typescript_api: string
   tools: MCPTool[]
+  prompts: MCPPrompt[]
   created_at: Date
   uptime_ms: number
 }

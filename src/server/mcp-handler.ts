@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
   type ExecuteCodeRequest,
@@ -11,10 +13,15 @@ import {
   LoadMCPRequestSchema,
   type MCPConfig,
   type MCPTool,
+  type MCPPrompt,
 } from '../types/mcp.js'
 import { ConfigManager } from '../utils/config-manager.js'
 import { MCPConnectionError, MCPIsolateError } from '../utils/errors.js'
 import logger from '../utils/logger.js'
+import {
+  getCachedSchema,
+  cleanupSchemaCache,
+} from '../utils/mcp-registry.js'
 import { validateInput, validateTypeScriptCode } from '../utils/validation.js'
 import { MetricsCollector } from './metrics-collector.js'
 import { WorkerManager } from './worker-manager.js'
@@ -26,6 +33,8 @@ export class MCPHandler {
   private configManager: ConfigManager
   // Cache for discovered MCP tools (for transparent proxy mode)
   private discoveredMCPTools: Map<string, MCPTool[]> = new Map()
+  // Cache for discovered MCP prompts (for transparent proxy mode)
+  private discoveredMCPPrompts: Map<string, MCPPrompt[]> = new Map()
 
   constructor() {
     this.server = new Server(
@@ -36,6 +45,7 @@ export class MCPHandler {
       {
         capabilities: {
           tools: {},
+          prompts: {},
         },
       },
     )
@@ -43,6 +53,9 @@ export class MCPHandler {
     this.workerManager = new WorkerManager()
     this.metricsCollector = new MetricsCollector()
     this.configManager = new ConfigManager()
+
+    // Clean up stale schema cache entries
+    cleanupSchemaCache()
 
     this.setupHandlers()
   }
@@ -132,6 +145,51 @@ export class MCPHandler {
       logger.warn(
         { error, mcpName },
         'Failed to lazy-load MCP tools for transparent proxy',
+      )
+      // Don't throw - just log and continue
+    }
+  }
+
+  /**
+   * Ensure MCP prompts are loaded for a specific MCP (lazy loading)
+   * Only loads if not already loaded
+   */
+  private async ensureMCPPromptsLoaded(mcpName: string): Promise<void> {
+    // If already loaded, skip
+    if (this.discoveredMCPPrompts.has(mcpName)) {
+      return
+    }
+
+    // Load this specific MCP's prompts
+    const configuredMCPs = await this.discoverConfiguredMCPs()
+    const entry = configuredMCPs.get(mcpName)
+    if (!entry) {
+      return // MCP not configured
+    }
+
+    try {
+      // Resolve environment variables
+      const resolvedConfig = this.configManager.resolveEnvVarsInObject(
+        entry.config,
+      ) as MCPConfig
+
+      // Load prompts only (no process spawn)
+      const prompts = await this.workerManager.loadMCPPromptsOnly(
+        mcpName,
+        resolvedConfig,
+      )
+
+      if (prompts.length > 0) {
+        this.discoveredMCPPrompts.set(mcpName, prompts)
+        logger.debug(
+          { mcpName, promptCount: prompts.length },
+          'Lazy-loaded MCP prompts for transparent proxy',
+        )
+      }
+    } catch (error: unknown) {
+      logger.warn(
+        { error, mcpName },
+        'Failed to lazy-load MCP prompts for transparent proxy',
       )
       // Don't throw - just log and continue
     }
@@ -433,6 +491,84 @@ The code runs in an isolated Worker environment with no network access. All MCP 
       }
     })
 
+    // List available prompts
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+      logger.debug('Listing available prompts')
+
+      // Get all guarded MCPs from IDE config
+      const configuredMCPs = await this.discoverConfiguredMCPs()
+      const guardedMCPs: string[] = []
+      
+      for (const [mcpName, entry] of configuredMCPs.entries()) {
+        // Only include guarded (disabled) MCPs - these are the ones routed through MCPGuard
+        if (entry.status === 'disabled') {
+          guardedMCPs.push(mcpName)
+        }
+      }
+
+      // Lazy-load prompts from all guarded MCPs
+      const promptLoadPromises = guardedMCPs.map(mcpName => 
+        this.ensureMCPPromptsLoaded(mcpName)
+      )
+      await Promise.all(promptLoadPromises)
+
+      // Aggregate prompts from all guarded MCPs
+      const aggregatedPrompts: Array<{
+        name: string
+        description?: string
+        arguments?: Array<{
+          name: string
+          description?: string
+          required?: boolean
+        }>
+      }> = []
+
+      for (const mcpName of guardedMCPs) {
+        const prompts = this.discoveredMCPPrompts.get(mcpName)
+        if (prompts && prompts.length > 0) {
+          for (const prompt of prompts) {
+            // Add MCP namespace prefix using colon separator
+            // Format: "github:AssignCodingAgent" which Cursor will display as "mcpguard/github:AssignCodingAgent"
+            // This makes it clear which MCP the prompt originates from
+            let namespacedName = prompt.name
+            if (!namespacedName.includes(':') && !namespacedName.includes('/')) {
+              // No namespace present, add it with colon separator
+              namespacedName = `${mcpName}:${prompt.name}`
+            } else if (namespacedName.includes('/')) {
+              // If the prompt has a slash (e.g., "github/AssignCodingAgent"), replace with colon
+              const parts = namespacedName.split('/')
+              if (parts.length === 2 && parts[0] === mcpName) {
+                // Replace slash with colon: "github/AssignCodingAgent" -> "github:AssignCodingAgent"
+                namespacedName = `${parts[0]}:${parts[1]}`
+              } else {
+                // Different namespace or complex path, add our namespace with colon
+                namespacedName = `${mcpName}:${prompt.name}`
+              }
+            }
+            
+            aggregatedPrompts.push({
+              name: namespacedName,
+              description: prompt.description,
+              arguments: prompt.arguments,
+            })
+          }
+        }
+      }
+
+      logger.debug(
+        {
+          guardedMCPsCount: guardedMCPs.length,
+          totalPromptsCount: aggregatedPrompts.length,
+          promptNames: aggregatedPrompts.map(p => p.name),
+        },
+        'Returning aggregated prompts from guarded MCPs',
+      )
+
+      return {
+        prompts: aggregatedPrompts,
+      }
+    })
+
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
@@ -574,6 +710,250 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                     'Check logs for details. If the error persists, try reloading the MCP server.',
                   context: {
                     tool: name,
+                    original_error: errorMessage,
+                  },
+                  details: {
+                    stack: errorStack,
+                  },
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        }
+      }
+    })
+
+    // Handle prompt requests
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params
+
+      logger.info({ prompt: name, args }, 'Prompt requested')
+
+      try {
+        // Parse prompt name to extract MCP namespace
+        // Format: "github:AssignCodingAgent" -> mcpName: "github", promptName: "AssignCodingAgent"
+        // Note: Cursor adds its own prefix, so user sees "mcpguard/github:AssignCodingAgent"
+        const parts = name.split(':')
+        if (parts.length < 2) {
+          throw new MCPIsolateError(
+            `Invalid prompt name format: ${name}. Expected format: mcpName:promptName`,
+            'INVALID_INPUT',
+            400,
+          )
+        }
+
+        const mcpName = parts[0]
+        const actualPromptName = parts.slice(1).join(':') // Strip namespace, keep rest
+        
+        // Check if the original MCP already had a namespace (e.g., "github/AssignCodingAgent")
+        // We'll try both the stripped name and with slash format
+
+        // Check if MCP is already loaded
+        let instance = this.workerManager.getMCPByName(mcpName)
+
+        if (!instance) {
+          // Auto-load MCP from config
+          const allMCPs = this.configManager.getAllConfiguredMCPs()
+          const mcpEntry = allMCPs[mcpName]
+
+          if (!mcpEntry) {
+            throw new MCPIsolateError(
+              `MCP "${mcpName}" not found in IDE configuration. Use search_mcp_tools to see available MCPs.`,
+              'NOT_FOUND',
+              404,
+              {
+                mcp_name: mcpName,
+                suggestion:
+                  'Use search_mcp_tools to discover configured MCPs, or use connect to connect to a new MCP.',
+              },
+            )
+          }
+
+          // Only allow guarded MCPs through prompt proxy
+          if (mcpEntry.status === 'active') {
+            throw new MCPIsolateError(
+              `MCP "${mcpName}" is unguarded and should be called directly by the IDE, not through MCPGuard. To use MCPGuard, first guard this MCP in your IDE configuration.`,
+              'UNGUARDED_MCP',
+              400,
+              {
+                mcp_name: mcpName,
+                status: 'active',
+                suggestion:
+                  'This MCP is not guarded. Either call its prompts directly, or guard it first using the VS Code extension or by moving it to _mcpguard_disabled in your IDE config.',
+              },
+            )
+          }
+
+          // Resolve environment variables
+          const resolvedConfig = this.configManager.resolveEnvVarsInObject(
+            mcpEntry.config,
+          ) as MCPConfig
+
+          logger.info(
+            { mcp_name: mcpName },
+            'Auto-connecting MCP for prompt request',
+          )
+
+          // Load the MCP
+          const startTime = Date.now()
+          try {
+            const loadedInstance = await this.workerManager.loadMCP(
+              mcpName,
+              resolvedConfig,
+            )
+            const loadTime = Date.now() - startTime
+
+            this.metricsCollector.recordMCPLoad(loadedInstance.mcp_id, loadTime)
+
+            instance = loadedInstance
+
+            logger.info(
+              {
+                mcp_name: mcpName,
+                mcp_id: instance.mcp_id,
+                load_time_ms: loadTime,
+              },
+              'MCP auto-loaded for prompt request',
+            )
+          } catch (error: unknown) {
+            if (error instanceof MCPConnectionError) {
+              throw new MCPConnectionError(error.message, {
+                mcp_name: mcpName,
+                original_error: error.details,
+                fatal: true,
+              })
+            }
+            throw error
+          }
+        }
+
+        // Get the MCP client to call getPrompt
+        const client = this.workerManager.getMCPClient(instance.mcp_id)
+        if (!client) {
+          throw new MCPIsolateError(
+            `MCP client not found for ID: ${instance.mcp_id}`,
+            'NOT_FOUND',
+            404,
+          )
+        }
+
+        // Call getPrompt on the MCP client
+        // Try multiple name formats since we don't know how the MCP defines its prompts:
+        // 1. Just the prompt name: "AssignCodingAgent"
+        // 2. With slash: "github/AssignCodingAgent" (if MCP uses slash namespace)
+        // 3. With colon: "github:AssignCodingAgent" (if MCP uses colon namespace)
+        logger.debug(
+          { mcpName, promptName: actualPromptName, originalName: name, args },
+          'Calling getPrompt on MCP client',
+        )
+
+        let promptResponse
+        let lastError: unknown
+        
+        // Try 1: Stripped name (most common)
+        try {
+          promptResponse = await client.getPrompt({
+            name: actualPromptName,
+            arguments: args,
+          })
+        } catch (error: unknown) {
+          lastError = error
+          
+          // Try 2: With slash namespace
+          const nameWithSlash = `${mcpName}/${actualPromptName}`
+          try {
+            logger.debug(
+              { mcpName, attemptedName: nameWithSlash },
+              'Stripped name failed, trying with slash namespace',
+            )
+            promptResponse = await client.getPrompt({
+              name: nameWithSlash,
+              arguments: args,
+            })
+          } catch (error2: unknown) {
+            lastError = error2
+            
+            // Try 3: With colon namespace (unlikely but handle it)
+            try {
+              logger.debug(
+                { mcpName, attemptedName: name },
+                'Slash namespace failed, trying with colon namespace',
+              )
+              promptResponse = await client.getPrompt({
+                name: name,
+                arguments: args,
+              })
+            } catch (error3: unknown) {
+              // All attempts failed, throw the last error
+              throw lastError
+            }
+          }
+        }
+
+        logger.info(
+          { mcpName, promptName: actualPromptName },
+          'Prompt retrieved successfully',
+        )
+
+        // Return the prompt response (contains description and messages)
+        return promptResponse
+      } catch (error: unknown) {
+        logger.error({ error, prompt: name }, 'Prompt request failed')
+
+        if (error instanceof MCPIsolateError) {
+          const isFatal: boolean =
+            error.code === 'UNSUPPORTED_CONFIG' ||
+            error.code === 'MCP_CONNECTION_ERROR' ||
+            Boolean(
+              error.details &&
+                typeof error.details === 'object' &&
+                'fatal' in error.details &&
+                (error.details as { fatal?: boolean }).fatal === true,
+            )
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error_code: error.code,
+                    error_message: error.message,
+                    suggested_action: this.getSuggestedAction(error.code, name),
+                    context: {
+                      prompt: name,
+                      status_code: error.statusCode,
+                    },
+                    details: error.details,
+                    fatal: isFatal,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: true,
+          }
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error'
+        const errorStack = error instanceof Error ? error.stack : undefined
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error_code: 'INTERNAL_ERROR',
+                  error_message: 'Internal server error',
+                  suggested_action:
+                    'Check logs for details. If the error persists, try reloading the MCP server.',
+                  context: {
+                    prompt: name,
                     original_error: errorMessage,
                   },
                   details: {
@@ -920,8 +1300,8 @@ The code runs in an isolated Worker environment with no network access. All MCP 
         const formattedError = this.formatWranglerError(stderr, stdout)
 
         wranglerError = {
-          stderr: stderr || undefined,
-          stdout: stdout || undefined,
+          stderr: stderr ? this.filterWranglerOutput(stderr).join('\n') : undefined,
+          stdout: stdout ? this.filterWranglerOutput(stdout).join('\n') : undefined,
           exit_code:
             'exit_code' in errorDetails
               ? Number(errorDetails.exit_code)
@@ -990,27 +1370,94 @@ The code runs in an isolated Worker environment with no network access. All MCP 
    * Removes ANSI codes and structures the error message
    */
   private formatWranglerError(stderr: string, stdout: string): string {
-    // Remove ANSI escape codes for cleaner output
-    const cleanStderr = stderr.replace(/\u001b\[[0-9;]*m/g, '')
-    const cleanStdout = stdout.replace(/\u001b\[[0-9;]*m/g, '')
+    const lines: string[] = []
 
-    const parts: string[] = []
-
-    if (cleanStderr.trim()) {
-      parts.push('Wrangler Error Output:')
-      parts.push('─'.repeat(50))
-      parts.push(cleanStderr.trim())
+    // Process stderr first (highest priority)
+    if (stderr) {
+      const stderrLines = this.filterWranglerOutput(stderr)
+      lines.push(...stderrLines)
     }
 
-    if (cleanStdout.trim() && !cleanStdout.includes('wrangler')) {
-      // Only include stdout if it's not just the wrangler banner
-      parts.push('')
-      parts.push('Wrangler Output:')
-      parts.push('─'.repeat(50))
-      parts.push(cleanStdout.trim())
+    // Process stdout for additional context
+    if (stdout) {
+      const stdoutLines = this.filterWranglerOutput(stdout)
+      lines.push(...stdoutLines)
     }
 
-    return parts.join('\n')
+    return lines.join('\n').trim()
+  }
+
+  private filterWranglerOutput(output: string): string[] {
+    const lines = output.split('\n')
+    const filtered: string[] = []
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+
+      // Skip empty lines
+      if (!trimmed) continue
+
+      // Skip Wrangler banner and version info
+      if (trimmed.startsWith('⛅️') || trimmed.includes('wrangler ')) {
+        continue
+      }
+
+      // Skip separator lines
+      if (/^[─═]+$/.test(trimmed)) {
+        continue
+      }
+
+      // Skip .env and bindings boilerplate
+      if (
+        trimmed.includes('Using vars defined in .env') ||
+        trimmed.includes('Your Worker has access to') ||
+        trimmed.includes('Binding') ||
+        trimmed.includes('Resource') ||
+        trimmed.includes('Environment Variable local') ||
+        /^env\..+\("\(hidden\)"\)/.test(trimmed)
+      ) {
+        continue
+      }
+
+      // Skip startup messages
+      if (
+        trimmed.includes('Starting local server') ||
+        trimmed.includes('Ready on http')
+      ) {
+        continue
+      }
+
+      // Skip successful HTTP logs (keep only errors)
+      if (/\[wrangler:info\].*\b(200|201|204|304)\b/.test(trimmed)) {
+        continue
+      }
+
+      // Keep error markers
+      if (
+        trimmed.includes('[ERROR]') ||
+        trimmed.includes('✗') ||
+        trimmed.includes('Build failed') ||
+        /\b(4\d\d|5\d\d)\b/.test(trimmed) || // 4xx/5xx status codes
+        trimmed.includes('Error:') ||
+        trimmed.includes('at ')
+      ) {
+        filtered.push(line) // Keep original indentation
+        continue
+      }
+
+      // Keep file location info
+      if (/\w+\.(ts|js|tsx|jsx):\d+:\d+/.test(trimmed)) {
+        filtered.push(line)
+        continue
+      }
+
+      // Keep other potentially useful lines (but limit to avoid noise)
+      if (filtered.length < 20) {
+        filtered.push(line)
+      }
+    }
+
+    return filtered
   }
 
   private getExecutionErrorSuggestion(error?: string): string {
@@ -1748,12 +2195,14 @@ return result;`
     // Build results
     const results: Array<{
       mcp_name: string
-      status: 'loaded' | 'not_loaded' | 'disabled'
+      is_guarded: boolean
+      status: 'loaded' | 'not_loaded' | 'unguarded'
       config_source: 'cursor' | 'claude-code' | 'github-copilot'
       tools_count?: number
       tool_names?: string[]
       tools?: MCPTool[]
       mcp_id?: string
+      next_action?: string
     }> = []
 
     for (const [mcpName, entry] of Object.entries(guardedConfigs)) {
@@ -1779,23 +2228,42 @@ return result;`
       const loadedInstance = loadedInstances.find(
         (inst) => inst.mcp_name === mcpName,
       )
-      const isDisabled = disabledMCPs.includes(mcpName)
+      const isGuarded = disabledMCPs.includes(mcpName)
+
+      // Check persistent cache for unloaded guarded MCPs
+      let cachedTools: MCPTool[] | undefined
+      let cachedToolNames: string[] | undefined
+      if (!loadedInstance && isGuarded) {
+        const config = entry.config
+        const configHash = this.workerManager.hashConfig(mcpName, config)
+        const persistentCached = getCachedSchema(mcpName, configHash)
+
+        if (persistentCached) {
+          cachedTools = persistentCached.tools as MCPTool[]
+          cachedToolNames = persistentCached.toolNames
+          logger.debug(
+            { mcpName, toolCount: persistentCached.toolCount },
+            'Using persistent cache for tool discovery',
+          )
+        }
+      }
 
       const result: {
         mcp_name: string
-        status: 'loaded' | 'not_loaded' | 'disabled'
+        is_guarded: boolean
+        status: 'loaded' | 'not_loaded' | 'unguarded'
         config_source: 'cursor' | 'claude-code' | 'github-copilot'
         tools_count?: number
         tool_names?: string[]
         tools?: MCPTool[]
         mcp_id?: string
+        next_action?: string
       } = {
         mcp_name: mcpName,
-        status: loadedInstance
-          ? 'loaded'
-          : isDisabled
-            ? 'disabled'
-            : 'not_loaded',
+        is_guarded: isGuarded,
+        status: isGuarded
+          ? (loadedInstance ? 'loaded' : 'not_loaded')
+          : 'unguarded',
         config_source: entry.source,
       }
 
@@ -1811,11 +2279,33 @@ return result;`
           result.tools = loadedInstance.tools
         }
       } else {
-        result.tools_count = 0
-        if (detail_level === 'tools' || detail_level === 'full') {
-          result.tool_names = []
+        // Use persistent cache if available
+        result.tools_count = cachedTools?.length || 0
+
+        if (cachedToolNames && (detail_level === 'tools' || detail_level === 'full')) {
+          result.tool_names = cachedToolNames
+        }
+
+        if (detail_level === 'full' && cachedTools) {
+          result.tools = cachedTools
         }
       }
+
+      // Generate state-specific next_action
+      let nextAction: string
+      if (!result.is_guarded) {
+        nextAction = `This MCP is not guarded by MCPGuard. Your IDE loads it directly - use its tools directly (not via call_mcp).`
+      } else if (result.status === 'loaded') {
+        const toolHint =
+          result.tool_names && result.tool_names.length > 0
+            ? ` Available tools: ${result.tool_names.join(', ')}`
+            : ''
+        nextAction = `This MCP is guarded. Call call_mcp with mcp_name='${mcpName}' to execute tools.${toolHint}`
+      } else {
+        // status === 'not_loaded' and is_guarded === true
+        nextAction = `This MCP is guarded. Call call_mcp with mcp_name='${mcpName}' to auto-connect and execute tools.`
+      }
+      result.next_action = nextAction
 
       results.push(result)
     }
@@ -1826,16 +2316,26 @@ return result;`
           type: 'text',
           text: JSON.stringify(
             {
+              instructions:
+                'INSTRUCTIONS FOR USING MCPs:\n' +
+                '1. Locate the MCP you need in the \'mcps\' array below\n' +
+                '2. Check the \'is_guarded\' field:\n' +
+                '   - If is_guarded=true: This MCP is protected by MCPGuard. Use call_mcp with mcp_name to access it securely\n' +
+                '   - If is_guarded=false: This MCP is loaded directly by your IDE. Use its tools directly (not via call_mcp)\n' +
+                '3. For guarded MCPs, check \'status\' field:\n' +
+                '   - If \'loaded\': Call call_mcp immediately to execute tools\n' +
+                '   - If \'not_loaded\': Call call_mcp to auto-connect and execute tools\n' +
+                '4. Use the \'next_action\' field in each MCP result for specific guidance',
               mcps: results,
               total_count: results.length,
               loaded_count: results.filter((r) => r.status === 'loaded').length,
               not_loaded_count: results.filter((r) => r.status === 'not_loaded')
                 .length,
-              disabled_count: results.filter((r) => r.status === 'disabled')
+              disabled_count: results.filter((r) => r.status === 'unguarded')
                 .length,
               config_path: configPath,
               config_source: configSource,
-              note: 'These MCPs are configured in your IDE. Guarded MCPs are protected by MCPGuard and should be accessed through call_mcp. Use call_mcp with mcp_name to auto-connect and use these MCPs.',
+              note: `These MCPs are configured from your ${configSource} IDE config. Guarded MCPs (is_guarded=true) are protected by MCPGuard.`,
             },
             null,
             2,

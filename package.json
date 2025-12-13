@@ -23,15 +23,28 @@
     "check": "biome check src",
     "check:fix": "biome check --write src",
     "worker:dev": "npx wrangler dev",
-    "benchmark": "tsx benchmarks/github-comparison.ts"
+    "benchmark": "tsx benchmarks/github-comparison.ts",
+    "release": "release-it"
   },
   "keywords": [
     "mcp",
     "cloudflare-workers",
-    "code-mode"
+    "code-mode",
+    "security",
+    "isolation",
+    "sandbox",
+    "model-context-protocol"
   ],
   "author": "James Gentes",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jgentes/mcpguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jgentes/mcpguard/issues"
+  },
+  "homepage": "https://github.com/jgentes/mcpguard#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "dotenv": "^16.3.1",
@@ -43,8 +56,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
+    "@release-it/conventional-changelog": "^8.0.2",
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^2.1.8",
+    "release-it": "^17.10.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^2.1.8"

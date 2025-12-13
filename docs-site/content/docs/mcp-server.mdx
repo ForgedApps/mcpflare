@@ -76,6 +76,24 @@ weather::get_forecast
 - All tool calls route through secure isolation
 - Results returned transparently to the AI
 
+### MCP Prompts Support
+
+MCPGuard also supports **MCP Prompts** - pre-defined message templates that appear as slash commands in your IDE (e.g., `/mcpguard/github:AssignCodingAgent`).
+
+**What are prompts?**
+Prompts are read-only templates that return messages to inject into the chat context. Unlike tools (which execute actions), prompts simply provide pre-formatted text, making them useful for common workflows like "assign a coding agent to this issue" or "create a fix workflow."
+
+**Why don't prompts need worker isolation?**
+Prompts don't execute any code - they just return pre-defined messages. This makes them safe by design, so MCPGuard proxies them directly to the underlying MCP without the overhead of worker isolation. Only tools that execute actions require the security of worker isolates.
+
+**Example prompts:**
+```
+mcpguard/github:AssignCodingAgent
+mcpguard/github:issue_to_fix_workflow
+```
+
+The `mcpguard/github:` prefix shows these are GitHub MCP prompts routed through MCPGuard's transparent proxy.
+
 ### MCPGuard Management Tools
 
 | Tool | Description |
