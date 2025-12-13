@@ -68,12 +68,36 @@ export interface MCPSecurityConfig extends MCPSecurityConfigStored {
 /**
  * Global MCP Guard settings (stored format)
  */
+/** Cached MCP schema entry (stored in settings.json) */
+export interface MCPSchemaCacheEntry {
+  mcpName: string
+  configHash: string
+  tools: any[]  // MCPTool array (avoid import cycle)
+  prompts?: any[]  // MCPPrompt array (avoid import cycle)
+  toolNames: string[]
+  promptNames?: string[]
+  toolCount: number
+  promptCount?: number
+  typescriptApi?: string  // Optional, can omit to save disk space
+  cachedAt: string
+}
+
+/** MCP schema cache (keyed by mcpName:configHash) */
+export interface MCPSchemaCache {
+  [cacheKey: string]: MCPSchemaCacheEntry
+}
+
+/**
+ * Global MCP Guard settings (stored format)
+ */
 export interface MCPGuardSettingsStored {
   enabled: boolean
   defaults: Omit<MCPSecurityConfigStored, 'id' | 'mcpName' | 'lastModified'>
   mcpConfigs: MCPSecurityConfigStored[]
   /** Cached token metrics for MCPs */
   tokenMetricsCache?: Record<string, { toolCount: number; schemaChars: number; estimatedTokens: number; assessedAt: string }>
+  /** Cached MCP schemas for fast tool discovery */
+  mcpSchemaCache?: MCPSchemaCache
 }
 
 /**
@@ -85,6 +109,8 @@ export interface MCPGuardSettings {
   mcpConfigs: MCPSecurityConfig[]
   /** Cached token metrics for MCPs */
   tokenMetricsCache?: Record<string, { toolCount: number; schemaChars: number; estimatedTokens: number; assessedAt: string }>
+  /** Cached MCP schemas for fast tool discovery */
+  mcpSchemaCache?: MCPSchemaCache
 }
 
 /**
@@ -454,6 +480,64 @@ export function cleanupTokenMetricsCache(): { removed: string[] } {
     }
   }
   
+  return { removed }
+}
+
+/**
+ * Get MCP schema from persistent cache
+ */
+export function getCachedSchema(mcpName: string, configHash: string): MCPSchemaCacheEntry | null {
+  const settings = loadSettings()
+  const cacheKey = `${mcpName}:${configHash}`
+  return settings.mcpSchemaCache?.[cacheKey] || null
+}
+
+/**
+ * Save MCP schema to persistent cache
+ */
+export function saveCachedSchema(entry: MCPSchemaCacheEntry): void {
+  const settings = loadSettings()
+  const cacheKey = `${entry.mcpName}:${entry.configHash}`
+
+  if (!settings.mcpSchemaCache) {
+    settings.mcpSchemaCache = {}
+  }
+
+  settings.mcpSchemaCache[cacheKey] = entry
+  saveSettings(settings)
+
+  logger.debug({ mcpName: entry.mcpName, cacheKey, toolCount: entry.toolCount }, 'Saved MCP schema to persistent cache')
+}
+
+/**
+ * Clean up schema cache for MCPs that no longer exist or have config changes
+ */
+export function cleanupSchemaCache(): { removed: string[] } {
+  const settings = loadSettings()
+  const configManager = getConfigManager()
+  const allMCPs = configManager.getAllConfiguredMCPs()
+  const removed: string[] = []
+
+  if (settings.mcpSchemaCache) {
+    for (const cacheKey of Object.keys(settings.mcpSchemaCache)) {
+      const [mcpName] = cacheKey.split(':')
+      const mcpConfig = allMCPs[mcpName]
+
+      // Remove if MCP no longer exists
+      if (!mcpConfig) {
+        delete settings.mcpSchemaCache[cacheKey]
+        removed.push(cacheKey)
+        logger.debug({ cacheKey }, 'Removed schema cache entry for deleted MCP')
+      }
+      // Note: Config hash changes are handled automatically - new hash = new cache key
+    }
+
+    if (removed.length > 0) {
+      saveSettings(settings)
+      logger.info({ removed }, 'Cleaned up stale schema cache entries')
+    }
+  }
+
   return { removed }
 }
 

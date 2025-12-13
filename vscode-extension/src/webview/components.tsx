@@ -7,7 +7,7 @@
  * - All UI components should follow shadcn design patterns when possible
  */
 
-import React, { useCallback, useState, useRef, useEffect } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { postMessage } from './hooks'
 import type {
   ConnectionTestResult,
@@ -957,7 +957,13 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
           }}
         >
           <span>{formatNumber(totalTokens)}</span>
-          <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+            }}
+          >
             tokens
           </span>
         </div>
@@ -1225,7 +1231,7 @@ export const TokenSavingsBadge: React.FC<TokenSavingsBadgeProps> = ({
         >
           <SparklesIcon size={14} className={undefined} />
           <span style={{ color: 'var(--text-secondary)' }}>
-            MCPGuard achieving{' '}
+            MCPGuard provides{' '}
             <span style={{ color: '#22c55e', fontWeight: 600 }}>
               {Math.round(
                 (1 - MCPGUARD_BASELINE_TOKENS / guardedTokensOriginal) * 100,
@@ -1616,8 +1622,16 @@ const NetworkConfigSection: React.FC<NetworkConfigSectionProps> = ({
     setHasChanges(false)
   }, [network])
 
-  const handleChange = (updates: Partial<typeof localNetwork>) => {
-    setLocalNetwork(prev => ({ ...prev, ...updates }))
+  // Handle toggle changes - save immediately
+  const handleToggleChange = (updates: Partial<typeof localNetwork>) => {
+    const updatedNetwork = { ...localNetwork, ...updates }
+    setLocalNetwork(updatedNetwork)
+    onSave(updatedNetwork)
+  }
+
+  // Handle input changes - require save button
+  const handleInputChange = (updates: Partial<typeof localNetwork>) => {
+    setLocalNetwork((prev) => ({ ...prev, ...updates }))
     setHasChanges(true)
   }
 
@@ -1635,7 +1649,7 @@ const NetworkConfigSection: React.FC<NetworkConfigSectionProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Toggle
           enabled={localNetwork.enabled}
-          onChange={(enabled) => handleChange({ enabled })}
+          onChange={(enabled) => handleToggleChange({ enabled })}
           label="Enable Network Access"
           description="Allow this MCP to make outbound network requests"
         />
@@ -1655,7 +1669,7 @@ const NetworkConfigSection: React.FC<NetworkConfigSectionProps> = ({
               </label>
               <TagInput
                 tags={localNetwork.allowlist}
-                onChange={(allowlist) => handleChange({ allowlist })}
+                onChange={(allowlist) => handleInputChange({ allowlist })}
                 placeholder="Enter domain and press Enter (e.g., api.github.com)"
               />
               <div
@@ -1665,14 +1679,16 @@ const NetworkConfigSection: React.FC<NetworkConfigSectionProps> = ({
                   marginTop: '4px',
                 }}
               >
-                Only these hosts will be accessible. Leave empty to block
-                all external requests.
+                Only these hosts will be accessible. Leave empty to block all
+                external requests.
               </div>
             </div>
 
             <Toggle
               enabled={localNetwork.allowLocalhost}
-              onChange={(allowLocalhost) => handleChange({ allowLocalhost })}
+              onChange={(allowLocalhost) =>
+                handleToggleChange({ allowLocalhost })
+              }
               label="Allow Localhost"
               description="Permit requests to localhost and 127.0.0.1"
             />
@@ -1738,8 +1754,16 @@ const FileSystemConfigSection: React.FC<FileSystemConfigSectionProps> = ({
     setHasChanges(false)
   }, [fileSystem])
 
-  const handleChange = (updates: Partial<typeof localFileSystem>) => {
-    setLocalFileSystem(prev => ({ ...prev, ...updates }))
+  // Handle toggle changes - save immediately
+  const handleToggleChange = (updates: Partial<typeof localFileSystem>) => {
+    const updatedFileSystem = { ...localFileSystem, ...updates }
+    setLocalFileSystem(updatedFileSystem)
+    onSave(updatedFileSystem)
+  }
+
+  // Handle input changes - require save button
+  const handleInputChange = (updates: Partial<typeof localFileSystem>) => {
+    setLocalFileSystem((prev) => ({ ...prev, ...updates }))
     setHasChanges(true)
   }
 
@@ -1757,7 +1781,7 @@ const FileSystemConfigSection: React.FC<FileSystemConfigSectionProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Toggle
           enabled={localFileSystem.enabled}
-          onChange={(enabled) => handleChange({ enabled })}
+          onChange={(enabled) => handleToggleChange({ enabled })}
           label="Enable File System Access"
           description="Allow this MCP to access the file system"
         />
@@ -1777,7 +1801,7 @@ const FileSystemConfigSection: React.FC<FileSystemConfigSectionProps> = ({
               </label>
               <TagInput
                 tags={localFileSystem.readPaths}
-                onChange={(readPaths) => handleChange({ readPaths })}
+                onChange={(readPaths) => handleInputChange({ readPaths })}
                 placeholder="Enter path and press Enter (e.g., /home/user/projects)"
               />
             </div>
@@ -1795,7 +1819,7 @@ const FileSystemConfigSection: React.FC<FileSystemConfigSectionProps> = ({
               </label>
               <TagInput
                 tags={localFileSystem.writePaths}
-                onChange={(writePaths) => handleChange({ writePaths })}
+                onChange={(writePaths) => handleInputChange({ writePaths })}
                 placeholder="Enter path and press Enter (e.g., /tmp)"
               />
               <div
@@ -1848,6 +1872,209 @@ const FileSystemConfigSection: React.FC<FileSystemConfigSectionProps> = ({
   )
 }
 
+/**
+ * Version Configuration Section Component
+ * Displays version info for npx-based MCPs with "Check for Updates" button
+ */
+interface VersionConfigSectionProps {
+  server: MCPServerInfo
+  onCheckVersion?: (mcpName: string) => void
+}
+
+const VersionConfigSection: React.FC<VersionConfigSectionProps> = ({
+  server,
+  onCheckVersion,
+}) => {
+  const metrics = server.tokenMetrics
+
+  // Only show for npx MCPs with package name
+  if (!metrics?.packageName) {
+    return null
+  }
+
+  const formatTimeAgo = (isoDate: string | undefined): string => {
+    if (!isoDate) return 'never'
+    const now = Date.now()
+    const then = new Date(isoDate).getTime()
+    const diffMs = now - then
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60)
+      return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`
+    if (diffHours < 24)
+      return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+  }
+
+  return (
+    <CollapsibleSection
+      title="Version Info"
+      icon={<InfoIcon size={16} />}
+      defaultOpen={false}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {/* Package Name */}
+        <div>
+          <label
+            style={{
+              fontSize: '11px',
+              fontWeight: 500,
+              color: 'var(--text-muted)',
+              display: 'block',
+              marginBottom: '4px',
+            }}
+          >
+            Package
+          </label>
+          <div
+            style={{
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+              fontFamily: 'monospace',
+            }}
+          >
+            {metrics.packageName}
+          </div>
+        </div>
+
+        {/* Installed Version */}
+        {metrics.installedVersion && (
+          <div>
+            <label
+              style={{
+                fontSize: '11px',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                display: 'block',
+                marginBottom: '4px',
+              }}
+            >
+              Installed Version
+            </label>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+              }}
+            >
+              v{metrics.installedVersion}
+            </div>
+          </div>
+        )}
+
+        {/* Latest Version */}
+        {metrics.latestVersion && (
+          <div>
+            <label
+              style={{
+                fontSize: '11px',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                display: 'block',
+                marginBottom: '4px',
+              }}
+            >
+              Latest Version
+            </label>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+              }}
+            >
+              v{metrics.latestVersion}
+              {metrics.installedVersion &&
+                metrics.installedVersion !== metrics.latestVersion && (
+                  <span
+                    style={{
+                      marginLeft: '8px',
+                      fontSize: '10px',
+                      color: 'var(--warning)',
+                    }}
+                  >
+                    (update available)
+                  </span>
+                )}
+            </div>
+          </div>
+        )}
+
+        {/* Version Check Timestamp */}
+        {metrics.versionCheckedAt && (
+          <div
+            style={{
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontStyle: 'italic',
+            }}
+          >
+            Last checked: {formatTimeAgo(metrics.versionCheckedAt)}
+          </div>
+        )}
+
+        {/* Check for Updates Button */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: '4px',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onCheckVersion?.(server.name)
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '11px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <RefreshIcon size={12} />
+            Check for Updates
+          </button>
+        </div>
+
+        {/* Future: Update button placeholder */}
+        {metrics.installedVersion &&
+          metrics.latestVersion &&
+          metrics.installedVersion !== metrics.latestVersion && (
+            <div
+              style={{
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                fontStyle: 'italic',
+                padding: '8px',
+                background: 'var(--bg-hover)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              Note: Automatic updates will be available in a future release. For
+              now, update manually via npm/npx.
+            </div>
+          )}
+      </div>
+    </CollapsibleSection>
+  )
+}
+
 interface MCPCardProps {
   server: MCPServerInfo
   config?: MCPSecurityConfig
@@ -1873,7 +2100,8 @@ export const MCPCard: React.FC<MCPCardProps> = ({
 }) => {
   // Use controlled state if provided, otherwise use local state
   const [localIsExpanded, setLocalIsExpanded] = useState(false)
-  const isExpanded = controlledIsExpanded !== undefined ? controlledIsExpanded : localIsExpanded
+  const isExpanded =
+    controlledIsExpanded !== undefined ? controlledIsExpanded : localIsExpanded
   const setIsExpanded = onToggleExpanded || setLocalIsExpanded
 
   // Initialize config if not exists
@@ -1999,8 +2227,8 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                 {server.source}
               </span>
             )}
-            {/* Token count badge - successfully assessed */}
-            {server.tokenMetrics && (
+            {/* Token count badge - successfully assessed (only if no version info) */}
+            {server.tokenMetrics && !server.tokenMetrics.packageName && (
               <span
                 style={{
                   fontSize: '10px',
@@ -2094,6 +2322,118 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                 </span>
               )}
           </div>
+
+          {/* Version and package info line (for npx-based MCPs) */}
+          {server.tokenMetrics?.packageName && (
+            <div
+              style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                marginTop: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <span title={`NPM package: ${server.tokenMetrics.packageName}`}>
+                {server.tokenMetrics.packageName}
+              </span>
+              {/* Show version badge */}
+              {server.tokenMetrics.latestVersion && (
+                <>
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: '3px',
+                      border: `1px solid ${(() => {
+                        const installed = server.tokenMetrics.installedVersion
+                        const latest = server.tokenMetrics.latestVersion
+                        // If we have both, compare them
+                        if (installed && latest) {
+                          const parseVersion = (v: string): number[] => {
+                            const cleaned = v.replace(/^v/, '')
+                            return cleaned
+                              .split('.')
+                              .map((n) => parseInt(n, 10) || 0)
+                          }
+                          try {
+                            const installedParts = parseVersion(installed)
+                            const latestParts = parseVersion(latest)
+                            if (latestParts[0] > installedParts[0])
+                              return '#ef4444' // Red - major behind
+                            if (
+                              latestParts[0] === installedParts[0] &&
+                              (latestParts[1] > installedParts[1] ||
+                                latestParts[2] > installedParts[2])
+                            )
+                              return '#eab308' // Yellow - minor/patch behind
+                            return '#22c55e' // Green - up to date
+                          } catch {
+                            return '#22c55e' // Default to green on parse error
+                          }
+                        }
+                        // Only have one version - show green (up to date assumed)
+                        return '#22c55e'
+                      })()}`,
+                      color: (() => {
+                        const installed = server.tokenMetrics.installedVersion
+                        const latest = server.tokenMetrics.latestVersion
+                        if (installed && latest) {
+                          const parseVersion = (v: string): number[] => {
+                            const cleaned = v.replace(/^v/, '')
+                            return cleaned
+                              .split('.')
+                              .map((n) => parseInt(n, 10) || 0)
+                          }
+                          try {
+                            const installedParts = parseVersion(installed)
+                            const latestParts = parseVersion(latest)
+                            if (latestParts[0] > installedParts[0])
+                              return '#ef4444'
+                            if (
+                              latestParts[0] === installedParts[0] &&
+                              (latestParts[1] > installedParts[1] ||
+                                latestParts[2] > installedParts[2])
+                            )
+                              return '#eab308'
+                            return '#22c55e'
+                          } catch {
+                            return '#22c55e'
+                          }
+                        }
+                        return '#22c55e'
+                      })(),
+                      fontWeight: 500,
+                      fontSize: '10px',
+                    }}
+                    title={(() => {
+                      const installed = server.tokenMetrics.installedVersion
+                      const latest = server.tokenMetrics.latestVersion
+                      if (installed && latest && installed !== latest) {
+                        return `Current: v${installed}, Latest: v${latest}`
+                      }
+                      if (installed) return `Version: v${installed}`
+                      if (latest) return `Latest: v${latest}`
+                      return 'Version unknown'
+                    })()}
+                  >
+                    v
+                    {server.tokenMetrics.installedVersion ||
+                      server.tokenMetrics.latestVersion}
+                  </span>
+                  {server.tokenMetrics.estimatedTokens && (
+                    <span
+                      style={{ color: 'var(--text-muted)', fontSize: '10px' }}
+                    >
+                      · ~{server.tokenMetrics.estimatedTokens.toLocaleString()}{' '}
+                      tokens
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <div
             style={{
               fontSize: '12px',
@@ -2536,20 +2876,60 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                   >
                     {server.headers ? (
                       <>
-                        This URL-based MCP has{' '}
-                        <strong>
-                          {Object.keys(server.headers).join(', ')}
-                        </strong>{' '}
-                        configured, but we couldn't connect to count its tools.
-                        This is normal for MCPs that require session-based auth
-                        (like GitHub Copilot). The MCP will still work correctly
-                        when used.
+                        Initial assessment couldn't retrieve tool information.
+                        This can happen if the MCP requires session-based
+                        authentication or if there were temporary connection
+                        issues.{' '}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            postMessage({
+                              type: 'openIDEConfig',
+                              source: server.source,
+                            })
+                          }
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--link)',
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: 'inherit',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Review your configuration
+                        </button>{' '}
+                        to verify the setup, then try retrying the assessment
+                        below.
                       </>
                     ) : (
                       <>
                         This URL-based MCP has no authentication headers
-                        configured. If this MCP requires auth, add headers to
-                        your Cursor MCP config.
+                        configured. If this MCP requires auth,{' '}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            postMessage({
+                              type: 'openIDEConfig',
+                              source: server.source,
+                            })
+                          }
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--link)',
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: 'inherit',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          add headers to your Cursor MCP config
+                        </button>
+                        , then retry the assessment below.
                       </>
                     )}
                   </div>
@@ -2558,9 +2938,68 @@ export const MCPCard: React.FC<MCPCardProps> = ({
                       fontSize: '10px',
                       color: 'var(--text-muted)',
                       marginTop: '8px',
+                      marginBottom: '10px',
                     }}
                   >
                     URL: {server.url}
+                    {server.headers && (
+                      <>
+                        <br />
+                        Headers configured:{' '}
+                        {Object.keys(server.headers).join(', ')}
+                      </>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      marginTop: '10px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        postMessage({
+                          type: 'retryAssessment',
+                          mcpName: server.name,
+                        })
+                      }
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '11px',
+                        background: server.headers
+                          ? 'rgba(255, 215, 0, 0.15)'
+                          : 'rgba(239, 68, 68, 0.15)',
+                        color: server.headers
+                          ? 'var(--warning)'
+                          : 'var(--error)',
+                        border: `1px solid ${server.headers ? 'rgba(255, 215, 0, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                      }}
+                    >
+                      Retry Assessment
+                    </button>
+                    {onTestConnection && (
+                      <button
+                        type="button"
+                        onClick={() => onTestConnection(server.name)}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '11px',
+                          background: 'rgba(59, 130, 246, 0.15)',
+                          color: 'rgb(59, 130, 246)',
+                          border: '1px solid rgba(59, 130, 246, 0.4)',
+                          borderRadius: 'var(--radius-sm)',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                      >
+                        Test Connection
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2658,6 +3097,14 @@ export const MCPCard: React.FC<MCPCardProps> = ({
           <FileSystemConfigSection
             fileSystem={currentConfig.fileSystem}
             onSave={(fileSystem) => updateConfig({ fileSystem })}
+          />
+
+          {/* Version Info Section */}
+          <VersionConfigSection
+            server={server}
+            onCheckVersion={(mcpName) =>
+              postMessage({ type: 'checkVersion', mcpName })
+            }
           />
 
           {/* Configuration Details */}
@@ -5135,7 +5582,9 @@ export const AddMCPModal: React.FC<AddMCPModalProps> = ({
                 <textarea
                   value={headers}
                   onChange={(e) => setHeaders(e.target.value)}
-                  placeholder={'Authorization: Bearer YOUR_TOKEN\nX-Custom-Header: value'}
+                  placeholder={
+                    'Authorization: Bearer YOUR_TOKEN\nX-Custom-Header: value'
+                  }
                   style={{
                     width: '100%',
                     minHeight: '60px',

@@ -1,0 +1,27 @@
+# CODEOWNERS file
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+# These owners will be requested for review when someone opens a pull request.
+*       @jgentes
+
+# Core server and worker components
+/src/server/        @jgentes
+/src/worker/        @jgentes
+
+# Security-critical components
+/src/utils/validation.ts    @jgentes
+/src/utils/errors.ts         @jgentes
+
+# CI/CD and workflows
+/.github/workflows/  @jgentes
+
+# Documentation
+/docs/              @jgentes
+/README.md          @jgentes
+/SECURITY.md        @jgentes
+/CONTRIBUTING.md    @jgentes
+
+# VSCode extension
+/vscode-extension/  @jgentes
+

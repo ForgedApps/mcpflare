@@ -50,6 +50,14 @@ export interface MCPTokenMetrics {
   estimatedTokens: number;
   /** When this assessment was performed */
   assessedAt: string;
+  /** NPM package name (for npx-based MCPs only) */
+  packageName?: string;
+  /** Installed version detected during assessment (for npx-based MCPs only) */
+  installedVersion?: string;
+  /** Latest version from npm registry (checked async) */
+  latestVersion?: string;
+  /** ISO timestamp of last version check */
+  versionCheckedAt?: string;
 }
 
 /**
@@ -161,7 +169,8 @@ export type WebviewMessage =
   | { type: 'openExternalLink'; url: string }
   | { type: 'deleteMCP'; mcpName: string }
   | { type: 'addMCP'; name: string; config: MCPConfigInput }
-  | { type: 'invalidateCache'; mcpName: string };
+  | { type: 'invalidateCache'; mcpName: string }
+  | { type: 'checkVersion'; mcpName: string };
 
 /**
  * Token savings summary data

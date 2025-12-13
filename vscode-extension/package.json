@@ -69,7 +69,7 @@
     "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts --watch",
     "lint": "biome check src/",
     "lint:fix": "biome check --apply src/",
-    "test": "vitest run",
+    "test": "vitest run --no-watch --no-open",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },

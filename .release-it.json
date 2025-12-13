@@ -1,0 +1,28 @@
+{
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}",
+    "requireCleanWorkingDir": false,
+    "requireUpstream": false
+  },
+  "github": {
+    "release": true,
+    "releaseName": "Release ${version}",
+    "draft": false
+  },
+  "npm": {
+    "publish": true
+  },
+  "hooks": {
+    "before:init": ["npm run lint", "npm run test", "npm run build"]
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": {
+        "name": "conventionalcommits"
+      },
+      "infile": "CHANGELOG.md"
+    }
+  }
+}
+

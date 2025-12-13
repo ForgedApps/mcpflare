@@ -358,6 +358,11 @@ Configure your AI agent (Claude Desktop, Cursor IDE, etc.):
 - Schemas are loaded on-demand when tools are called, keeping your context window efficient
 - All tool calls are routed through secure isolation
 
+**MCP Prompts** (slash commands):
+- Prompts from your configured MCPs appear as slash commands (e.g., `/mcpguard/github:AssignCodingAgent`)
+- Prompts are read-only message templates, so they're directly proxied without worker isolation
+- All prompts are transparently aggregated and namespaced for easy discovery
+
 **MCPGuard Management Tools:**
 - `call_mcp` - Call MCP tools by running TypeScript code in a secure sandbox (auto-connects MCPs from IDE config if needed)
 - `guard` - Guard MCP servers by routing them through MCPGuard's secure isolation
