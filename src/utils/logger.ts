@@ -4,11 +4,13 @@ import pinoPretty from 'pino-pretty'
 // Determine log level - CLI mode is quieter by default
 // Check for CLI mode: script name includes 'cli', or CLI_MODE env var is set
 const isCLIMode =
-  process.argv[1]?.includes('cli') ||
-  process.env.CLI_MODE === 'true'
+  process.argv[1]?.includes('cli') || process.env.CLI_MODE === 'true'
 // In test environment, silence all logs unless LOG_LEVEL is explicitly set
-const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.argv[1]?.includes('vitest')
-const defaultLevel = isTestEnv ? 'silent' : (isCLIMode ? 'warn' : 'info') // Silent in tests, warn in CLI, info otherwise
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  process.env.VITEST === 'true' ||
+  process.argv[1]?.includes('vitest')
+const defaultLevel = isTestEnv ? 'silent' : isCLIMode ? 'warn' : 'info' // Silent in tests, warn in CLI, info otherwise
 
 // Detect dev mode - when running via tsx or NODE_ENV is not production
 const isDevMode = process.env.NODE_ENV !== 'production' && !isTestEnv
@@ -35,7 +37,7 @@ if (isDevMode) {
       colorize: isTTY, // Only colorize if we're in a terminal
       translateTime: 'HH:MM:ss.l',
       ignore: 'pid,hostname',
-    })
+    }),
   )
 } else {
   // In production/server mode, write JSON logs to stderr

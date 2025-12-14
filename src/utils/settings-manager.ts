@@ -7,20 +7,20 @@
  */
 
 import * as fs from 'node:fs'
-import * as path from 'node:path'
 import * as os from 'node:os'
+import * as path from 'node:path'
 import type { MCPTokenMetrics } from './token-calculator.js'
 
 /**
  * Settings file structure (shared with VSCode extension)
  */
 interface SettingsFile {
-	enabled?: boolean
-	tokenMetricsCache?: Record<string, MCPTokenMetrics>
-	assessmentErrorsCache?: Record<string, unknown>
-	contextWindowSize?: number
-	// ... other fields managed by extension
-	[key: string]: unknown
+  enabled?: boolean
+  tokenMetricsCache?: Record<string, MCPTokenMetrics>
+  assessmentErrorsCache?: Record<string, unknown>
+  contextWindowSize?: number
+  // ... other fields managed by extension
+  [key: string]: unknown
 }
 
 /**
@@ -28,13 +28,13 @@ interface SettingsFile {
  * Creates the directory if it doesn't exist
  */
 export function getSettingsPath(): string {
-	const configDir = path.join(os.homedir(), '.mcpguard')
+  const configDir = path.join(os.homedir(), '.mcpguard')
 
-	if (!fs.existsSync(configDir)) {
-		fs.mkdirSync(configDir, { recursive: true })
-	}
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
+  }
 
-	return path.join(configDir, 'settings.json')
+  return path.join(configDir, 'settings.json')
 }
 
 /**
@@ -42,19 +42,19 @@ export function getSettingsPath(): string {
  * Returns empty object if file doesn't exist or can't be parsed
  */
 export function loadSettings(): SettingsFile {
-	const settingsPath = getSettingsPath()
+  const settingsPath = getSettingsPath()
 
-	if (!fs.existsSync(settingsPath)) {
-		return {}
-	}
+  if (!fs.existsSync(settingsPath)) {
+    return {}
+  }
 
-	try {
-		const content = fs.readFileSync(settingsPath, 'utf-8')
-		return JSON.parse(content) as SettingsFile
-	} catch (error) {
-		console.warn('Failed to load settings:', error)
-		return {}
-	}
+  try {
+    const content = fs.readFileSync(settingsPath, 'utf-8')
+    return JSON.parse(content) as SettingsFile
+  } catch (error) {
+    console.warn('Failed to load settings:', error)
+    return {}
+  }
 }
 
 /**
@@ -62,8 +62,8 @@ export function loadSettings(): SettingsFile {
  * Creates directory and file if they don't exist
  */
 export function saveSettings(settings: SettingsFile): void {
-	const settingsPath = getSettingsPath()
-	fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
+  const settingsPath = getSettingsPath()
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
 }
 
 /**
@@ -71,18 +71,16 @@ export function saveSettings(settings: SettingsFile): void {
  * Returns Map for convenient lookup
  */
 export function loadTokenMetrics(): Map<string, MCPTokenMetrics> {
-	const settings = loadSettings()
-	const cache = new Map<string, MCPTokenMetrics>()
+  const settings = loadSettings()
+  const cache = new Map<string, MCPTokenMetrics>()
 
-	if (settings.tokenMetricsCache) {
-		for (const [name, metrics] of Object.entries(
-			settings.tokenMetricsCache,
-		)) {
-			cache.set(name, metrics)
-		}
-	}
+  if (settings.tokenMetricsCache) {
+    for (const [name, metrics] of Object.entries(settings.tokenMetricsCache)) {
+      cache.set(name, metrics)
+    }
+  }
 
-	return cache
+  return cache
 }
 
 /**
@@ -90,30 +88,28 @@ export function loadTokenMetrics(): Map<string, MCPTokenMetrics> {
  * Preserves other settings in the file
  */
 export function saveTokenMetrics(cache: Map<string, MCPTokenMetrics>): void {
-	const settings = loadSettings()
+  const settings = loadSettings()
 
-	if (!settings.tokenMetricsCache) {
-		settings.tokenMetricsCache = {}
-	}
+  if (!settings.tokenMetricsCache) {
+    settings.tokenMetricsCache = {}
+  }
 
-	// Clear existing cache and repopulate from Map
-	settings.tokenMetricsCache = {}
-	for (const [name, metrics] of cache.entries()) {
-		settings.tokenMetricsCache[name] = metrics
-	}
+  // Clear existing cache and repopulate from Map
+  settings.tokenMetricsCache = {}
+  for (const [name, metrics] of cache.entries()) {
+    settings.tokenMetricsCache[name] = metrics
+  }
 
-	saveSettings(settings)
+  saveSettings(settings)
 }
 
 /**
  * Get cached metrics for a specific MCP
  * Returns undefined if not cached
  */
-export function getCachedMetrics(
-	mcpName: string,
-): MCPTokenMetrics | undefined {
-	const cache = loadTokenMetrics()
-	return cache.get(mcpName)
+export function getCachedMetrics(mcpName: string): MCPTokenMetrics | undefined {
+  const cache = loadTokenMetrics()
+  return cache.get(mcpName)
 }
 
 /**
@@ -121,12 +117,12 @@ export function getCachedMetrics(
  * Creates settings file if it doesn't exist
  */
 export function setCachedMetrics(
-	mcpName: string,
-	metrics: MCPTokenMetrics,
+  mcpName: string,
+  metrics: MCPTokenMetrics,
 ): void {
-	const cache = loadTokenMetrics()
-	cache.set(mcpName, metrics)
-	saveTokenMetrics(cache)
+  const cache = loadTokenMetrics()
+  cache.set(mcpName, metrics)
+  saveTokenMetrics(cache)
 }
 
 /**
@@ -134,23 +130,23 @@ export function setCachedMetrics(
  * Call this when an MCP is deleted, modified, or its guard status changes
  */
 export function invalidateMetricsCache(mcpName: string): void {
-	const settings = loadSettings()
+  const settings = loadSettings()
 
-	let changed = false
+  let changed = false
 
-	if (settings.tokenMetricsCache?.[mcpName]) {
-		delete settings.tokenMetricsCache[mcpName]
-		changed = true
-	}
+  if (settings.tokenMetricsCache?.[mcpName]) {
+    delete settings.tokenMetricsCache[mcpName]
+    changed = true
+  }
 
-	if (settings.assessmentErrorsCache?.[mcpName]) {
-		delete settings.assessmentErrorsCache[mcpName]
-		changed = true
-	}
+  if (settings.assessmentErrorsCache?.[mcpName]) {
+    delete settings.assessmentErrorsCache[mcpName]
+    changed = true
+  }
 
-	if (changed) {
-		saveSettings(settings)
-	}
+  if (changed) {
+    saveSettings(settings)
+  }
 }
 
 /**
@@ -158,6 +154,6 @@ export function invalidateMetricsCache(mcpName: string): void {
  * Useful for cleanup operations
  */
 export function getCachedMCPNames(): string[] {
-	const cache = loadTokenMetrics()
-	return Array.from(cache.keys())
+  const cache = loadTokenMetrics()
+  return Array.from(cache.keys())
 }

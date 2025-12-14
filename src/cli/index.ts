@@ -167,7 +167,7 @@ async function loadMCP() {
     let env: Record<string, string> = {}
     try {
       env = await selectEnvVarsInteractively(rl)
-    } catch (_error: any) {
+    } catch (_error: unknown) {
       // Fallback to manual input if interactive selector fails
       console.log(
         '\n⚠️  Interactive selector failed, falling back to manual input.',
@@ -217,19 +217,25 @@ async function loadMCP() {
       const configPath = configManager.getCursorConfigPath()
       const sourceName = configManager.getConfigSourceDisplayName()
       console.log(`\n💾 Configuration saved to ${sourceName}: ${configPath}`)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.warn(
-        `\n⚠️  Warning: Failed to save configuration: ${error.message}`,
+        `\n⚠️  Warning: Failed to save configuration: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
 
     console.log(
       `\n✅ ${instance.mcp_name} loaded with ${instance.tools.length} ${instance.tools.length === 1 ? 'tool' : 'tools'}!`,
     )
-  } catch (error: any) {
-    console.error('\n❌ Error loading MCP:', error.message)
-    if (error.details) {
-      console.error('Details:', JSON.stringify(error.details, null, 2))
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error loading MCP:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error && typeof error === 'object' && 'details' in error) {
+      console.error(
+        'Details:',
+        JSON.stringify((error as { details?: unknown }).details, null, 2),
+      )
     }
   }
 }
@@ -237,7 +243,7 @@ async function loadMCP() {
 /**
  * Generate TypeScript code to call an MCP tool
  */
-function generateToolCallCode(toolName: string, args: any): string {
+function generateToolCallCode(toolName: string, args: unknown): string {
   // Format args as a single-line JSON for cleaner code
   const argsJson = JSON.stringify(args)
   return `const result = await mcp.${toolName}(${argsJson});
@@ -248,7 +254,11 @@ return result;`
 /**
  * Select a tool from available tools
  */
-async function selectToolFromInstance(tools: any[]): Promise<any> {
+type ToolSummary = { name: string; description?: string; inputSchema?: unknown }
+
+async function selectToolFromInstance(
+  tools: ToolSummary[],
+): Promise<ToolSummary | null> {
   console.log('\n📋 Available Tools:')
   tools.forEach((tool, index) => {
     console.log(`  ${index + 1}. ${tool.name}`)
@@ -286,17 +296,22 @@ async function selectToolFromInstance(tools: any[]): Promise<any> {
 /**
  * Get required properties from schema
  */
-function getRequiredProperties(schema: any): string[] {
-  if (!schema || !schema.properties) {
+function getRequiredProperties(schema: unknown): string[] {
+  if (!schema || typeof schema !== 'object' || !('properties' in schema)) {
     return []
   }
-  return schema.required || []
+
+  const required = (schema as { required?: unknown }).required
+  if (!Array.isArray(required)) {
+    return []
+  }
+  return required.filter((v): v is string => typeof v === 'string')
 }
 
 /**
  * Parse value based on type
  */
-function parseValue(value: string, type: string): any {
+function parseValue(value: string, type: string): unknown {
   if (type === 'number') {
     return parseFloat(value)
   } else if (type === 'boolean') {
@@ -329,23 +344,23 @@ function parseValue(value: string, type: string): any {
 /**
  * Collect tool arguments interactively
  */
-async function collectToolArguments(tool: any): Promise<any> {
-  const args: any = {}
-  const schema = tool.inputSchema
+async function collectToolArguments(
+  tool: ToolSummary,
+): Promise<Record<string, unknown>> {
+  const args: Record<string, unknown> = {}
+  const schema = (tool as ToolSummary).inputSchema as {
+    properties?: Record<string, unknown>
+  }
 
-  if (
-    !schema ||
-    !schema.properties ||
-    Object.keys(schema.properties).length === 0
-  ) {
+  if (!schema?.properties || Object.keys(schema.properties).length === 0) {
     console.log("\n💡 This tool doesn't require any arguments.")
     const useJson = await question(
       'Enter arguments as JSON (or press Enter to skip): ',
     )
     if (useJson.trim()) {
       try {
-        return JSON.parse(useJson.trim())
-      } catch (_e) {
+        return JSON.parse(useJson.trim()) as Record<string, unknown>
+      } catch (_e: unknown) {
         console.error('❌ Invalid JSON. Using empty arguments.')
         return {}
       }
@@ -375,7 +390,11 @@ async function collectToolArguments(tool: any): Promise<any> {
 
   for (const key of orderedKeys) {
     const prop = properties[key]
-    const propSchema = prop as any
+    const propSchema = prop as {
+      type?: unknown
+      description?: unknown
+      default?: unknown
+    }
     const isRequired = required.includes(key)
     const type = propSchema.type || 'string'
     const hasDefault = propSchema.default !== undefined
@@ -421,10 +440,12 @@ async function collectToolArguments(tool: any): Promise<any> {
       }
 
       try {
-        args[key] = parseValue(value.trim(), type)
+        args[key] = parseValue(value.trim(), String(type))
         break
-      } catch (e: any) {
-        console.error(`   ❌ ${e.message}. Please try again.`)
+      } catch (e: unknown) {
+        console.error(
+          `   ❌ ${e instanceof Error ? e.message : String(e)}. Please try again.`,
+        )
       }
     }
   }
@@ -442,8 +463,8 @@ async function testTool() {
     const allMCPs: Array<{
       name: string
       isLoaded: boolean
-      instance?: any
-      config?: any
+      instance?: MCPInstance
+      config?: MCPConfig
     }> = []
 
     // Add all saved configs
@@ -515,8 +536,13 @@ async function testTool() {
       selectedMCP = found
     }
 
+    if (!selectedMCP) {
+      console.error(`\n❌ MCP not found: ${selection}`)
+      return
+    }
+
     // If not loaded, load it first
-    let selectedInstance = selectedMCP.instance
+    let selectedInstance: MCPInstance | undefined = selectedMCP.instance
 
     if (!selectedMCP.isLoaded) {
       if (!selectedMCP.config) {
@@ -543,10 +569,15 @@ async function testTool() {
         console.log(
           `\n✅ ${selectedInstance.mcp_name} loaded with ${selectedInstance.tools.length} ${selectedInstance.tools.length === 1 ? 'tool' : 'tools'}!`,
         )
-      } catch (error: any) {
-        console.error(`\n❌ Error loading MCP: ${error.message}`)
-        if (error.details) {
-          console.error('Details:', JSON.stringify(error.details, null, 2))
+      } catch (error: unknown) {
+        console.error(
+          `\n❌ Error loading MCP: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        if (error && typeof error === 'object' && 'details' in error) {
+          console.error(
+            'Details:',
+            JSON.stringify((error as { details?: unknown }).details, null, 2),
+          )
         }
         return
       }
@@ -608,13 +639,18 @@ async function testTool() {
         )
 
         console.log('\n✅ Execution result:')
-        console.log(formatExecutionResult(result as any))
+        console.log(formatExecutionResult(result))
         console.log('')
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('\n❌ Execution failed:')
-        console.error(`   ${error.message}`)
-        if (error.details) {
-          console.error('Details:', JSON.stringify(error.details, null, 2))
+        console.error(
+          `   ${error instanceof Error ? error.message : String(error)}`,
+        )
+        if (error && typeof error === 'object' && 'details' in error) {
+          console.error(
+            'Details:',
+            JSON.stringify((error as { details?: unknown }).details, null, 2),
+          )
         }
         console.log('')
       }
@@ -624,10 +660,16 @@ async function testTool() {
         break
       }
     }
-  } catch (error: any) {
-    console.error('\n❌ Error testing tool:', error.message)
-    if (error.details) {
-      console.error('Details:', JSON.stringify(error.details, null, 2))
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error testing tool:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error && typeof error === 'object' && 'details' in error) {
+      console.error(
+        'Details:',
+        JSON.stringify((error as { details?: unknown }).details, null, 2),
+      )
     }
   }
 }
@@ -635,7 +677,7 @@ async function testTool() {
 /**
  * Format tool result for direct MCP testing (simpler than Worker execution)
  */
-function formatDirectToolResult(result: any): string {
+function formatDirectToolResult(result: unknown): string {
   try {
     const jsonStr = JSON.stringify(result, null, 2)
     // Limit output to 2000 characters
@@ -646,7 +688,7 @@ function formatDirectToolResult(result: any): string {
       )
     }
     return jsonStr
-  } catch (e) {
+  } catch (_e: unknown) {
     return String(result)
   }
 }
@@ -744,7 +786,11 @@ async function testDirect() {
 
     try {
       const progress = new ProgressIndicator()
-      ;(progress as any).steps = [
+      ;(
+        progress as unknown as {
+          steps: Array<{ name: string; status: string }>
+        }
+      ).steps = [
         { name: 'CLI', status: 'pending' },
         { name: 'MCP SDK Client', status: 'pending' },
         { name: 'Target MCP', status: 'pending' },
@@ -789,7 +835,11 @@ async function testDirect() {
         console.log('')
 
         const execProgress = new ProgressIndicator()
-        ;(execProgress as any).steps = [
+        ;(
+          execProgress as unknown as {
+            steps: Array<{ name: string; status: string }>
+          }
+        ).steps = [
           { name: 'CLI', status: 'pending' },
           { name: 'MCP SDK Client', status: 'pending' },
           { name: 'Target MCP', status: 'pending' },
@@ -811,14 +861,16 @@ async function testDirect() {
           console.log('\n✅ Tool execution result:')
           console.log(formatDirectToolResult(result))
           console.log('')
-        } catch (error: any) {
+        } catch (error: unknown) {
           execProgress.updateStep(1, 'failed')
           execProgress.updateStep(2, 'failed')
           execProgress.showFinal(2)
 
           console.error('\n❌ Tool execution failed:')
-          console.error(`   ${error.message}`)
-          if (error.stack) {
+          console.error(
+            `   ${error instanceof Error ? error.message : String(error)}`,
+          )
+          if (error instanceof Error && error.stack) {
             console.error(`\nStack trace:\n${error.stack}`)
           }
           console.log('')
@@ -832,17 +884,25 @@ async function testDirect() {
 
       await transport.close()
       console.log('\n✅ Test session completed!\n')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('\n❌ Error testing MCP:')
-      console.error(`   ${error.message}`)
-      if (error.stack) {
+      console.error(
+        `   ${error instanceof Error ? error.message : String(error)}`,
+      )
+      if (error instanceof Error && error.stack) {
         console.error(`\nStack trace:\n${error.stack}`)
       }
     }
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message)
-    if (error.details) {
-      console.error('Details:', JSON.stringify(error.details, null, 2))
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error && typeof error === 'object' && 'details' in error) {
+      console.error(
+        'Details:',
+        JSON.stringify((error as { details?: unknown }).details, null, 2),
+      )
     }
   }
 }
@@ -870,7 +930,7 @@ async function executeCode() {
       '\nSelect MCP by number or enter MCP ID/name: ',
     )
 
-    let selectedInstance
+    let selectedInstance: MCPInstance | undefined
     const selectionNum = parseInt(selection.trim(), 10)
 
     if (
@@ -942,11 +1002,17 @@ async function executeCode() {
       result.metrics?.mcp_calls_made ?? 0,
     )
 
-    console.log(formatExecutionResult(result as any))
-  } catch (error: any) {
-    console.error('\n❌ Error executing code:', error.message)
-    if (error.details) {
-      console.error('Details:', JSON.stringify(error.details, null, 2))
+    console.log(formatExecutionResult(result))
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error executing code:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error && typeof error === 'object' && 'details' in error) {
+      console.error(
+        'Details:',
+        JSON.stringify((error as { details?: unknown }).details, null, 2),
+      )
     }
   }
 }
@@ -1051,7 +1117,7 @@ async function getSchema() {
       '\nSelect MCP by number or enter MCP ID/name: ',
     )
 
-    let selectedInstance
+    let selectedInstance: MCPInstance | undefined
     const selectionNum = parseInt(selection.trim(), 10)
 
     if (
@@ -1087,8 +1153,11 @@ async function getSchema() {
     instance.tools.forEach((tool) => {
       console.log(`  - ${tool.name}: ${tool.description || 'No description'}`)
     })
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message)
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : String(error),
+    )
   }
 }
 
@@ -1112,7 +1181,7 @@ async function unloadMCP() {
       '\nSelect MCP to unload by number or enter MCP ID/name: ',
     )
 
-    let selectedInstance
+    let selectedInstance: MCPInstance | undefined
     const selectionNum = parseInt(selection.trim(), 10)
 
     if (
@@ -1151,9 +1220,9 @@ async function unloadMCP() {
         if (removed) {
           console.log(`\n💾 Configuration removed from saved configs.`)
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.warn(
-          `\n⚠️  Warning: Failed to remove from saved configs: ${error.message}`,
+          `\n⚠️  Warning: Failed to remove from saved configs: ${error instanceof Error ? error.message : String(error)}`,
         )
       }
     }
@@ -1161,8 +1230,11 @@ async function unloadMCP() {
     console.log(
       `\n✅ MCP server ${selectedInstance.mcp_name} unloaded successfully.`,
     )
-  } catch (error: any) {
-    console.error('\n❌ Error unloading MCP:', error.message)
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error unloading MCP:',
+      error instanceof Error ? error.message : String(error),
+    )
   }
 }
 
@@ -1206,9 +1278,9 @@ async function listSavedConfigs() {
         const envKeys = Object.keys(config.env)
         console.log(`     Env vars: ${envKeys.length} variable(s)`)
         envKeys.forEach((key) => {
-          const value = config.env![key]
+          const value = config.env?.[key]
           // Don't show full values, just indicate if it's an env var reference
-          if (value && value.startsWith('${') && value.endsWith('}')) {
+          if (value?.startsWith('${') && value.endsWith('}')) {
             console.log(`       ${key}: ${value}`)
           } else {
             console.log(`       ${key}: [hidden]`)
@@ -1353,8 +1425,10 @@ async function deleteSavedConfig() {
     } else {
       console.error(`\n❌ Failed to delete configuration "${selectedName}".`)
     }
-  } catch (error: any) {
-    console.error(`\n❌ Error deleting config: ${error.message}`)
+  } catch (error: unknown) {
+    console.error(
+      `\n❌ Error deleting config: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
@@ -1494,9 +1568,12 @@ async function showSavings() {
         '\n💡 Note: Some MCPs are using estimated tokens. Assessments happen automatically when you load them.',
       )
     }
-  } catch (error: any) {
-    console.error('\n❌ Error calculating token savings:', error.message)
-    if (error.stack && verbose) {
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error calculating token savings:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error instanceof Error && error.stack && verbose) {
       console.error(error.stack)
     }
   }
@@ -1553,7 +1630,9 @@ async function guardMCP(mcpName: string, shouldGuard: boolean) {
     if (!savedConfigs[mcpName]) {
       console.error(`\n❌ MCP not found: ${mcpName}`)
       console.log('\nAvailable MCPs:')
-      Object.keys(savedConfigs).forEach((name) => console.log(`  - ${name}`))
+      Object.keys(savedConfigs).forEach((name) => {
+        console.log(`  - ${name}`)
+      })
       return
     }
 
@@ -1597,9 +1676,11 @@ async function guardMCP(mcpName: string, shouldGuard: boolean) {
       console.log(`\n⚠ ${mcpName} removed from MCPGuard protection`)
       console.log(`  This MCP now has direct access to your system`)
     }
-  } catch (error: any) {
-    console.error(`\n❌ Error: ${error.message}`)
-    if (error.stack && verbose) {
+  } catch (error: unknown) {
+    console.error(
+      `\n❌ Error: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    if (error instanceof Error && error.stack && verbose) {
       console.error(error.stack)
     }
   }
@@ -1710,7 +1791,11 @@ async function diagnoseMCP() {
 
       try {
         const progress = new ProgressIndicator()
-        ;(progress as any).steps = [
+        ;(
+          progress as unknown as {
+            steps: Array<{ name: string; status: string }>
+          }
+        ).steps = [
           { name: 'CLI', status: 'pending' },
           { name: 'MCP SDK Client', status: 'pending' },
           { name: 'Target MCP', status: 'pending' },
@@ -1753,8 +1838,10 @@ async function diagnoseMCP() {
         }
 
         await transport.close()
-      } catch (error: any) {
-        console.log(`  ✗ Connection failed: ${error.message}\n`)
+      } catch (error: unknown) {
+        console.log(
+          `  ✗ Connection failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        )
 
         console.log('[3/4] Troubleshooting')
         console.log('  Possible issues:')
@@ -1777,9 +1864,12 @@ async function diagnoseMCP() {
         '\n  To test URL-based MCPs, use the VSCode extension or test-direct command',
       )
     }
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message)
-    if (error.stack && verbose) {
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error instanceof Error && error.stack && verbose) {
       console.error(error.stack)
     }
   }
@@ -1883,9 +1973,12 @@ async function configureMCP() {
     )
     console.log(`    • test ${selectedName}      - Test this MCP's tools`)
     console.log(`    • diagnose ${selectedName}  - Test connection`)
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message)
-    if (error.stack && verbose) {
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error instanceof Error && error.stack && verbose) {
       console.error(error.stack)
     }
   }
@@ -1957,9 +2050,12 @@ async function showStatus() {
       const firstGuarded = disabledMCPs[0]
       console.log(`  • test ${firstGuarded}     - Test a guarded MCP`)
     }
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message)
-    if (error.stack && verbose) {
+  } catch (error: unknown) {
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : String(error),
+    )
+    if (error instanceof Error && error.stack && verbose) {
       console.error(error.stack)
     }
   }

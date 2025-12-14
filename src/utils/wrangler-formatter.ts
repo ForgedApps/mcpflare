@@ -425,13 +425,15 @@ export function formatExecutionResult(result: {
       }
     }
     lines.push(`  ${firstLine}`)
-    
+
     // Security Metrics - security level first
     if (result.metrics.security) {
       const sec = result.metrics.security
       const networkStatus = sec.network_isolation_enabled ? '✓' : '✗'
       const processStatus = sec.process_isolation_enabled ? '✓' : '✗'
-      lines.push(`  Security (${sec.security_level.toUpperCase()}): Network ${networkStatus} | Process ${processStatus}`)
+      lines.push(
+        `  Security (${sec.security_level.toUpperCase()}): Network ${networkStatus} | Process ${processStatus}`,
+      )
     }
   } else {
     lines.push(`  Execution Time: ${result.execution_time_ms}ms`)

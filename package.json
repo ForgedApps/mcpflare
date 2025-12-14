@@ -13,6 +13,7 @@
     "cli": "tsx src/cli/index.ts",
     "build": "tsc",
     "test": "vitest",
+    "test:ci": "vitest run --reporter=dot",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:security": "vitest run tests/security",

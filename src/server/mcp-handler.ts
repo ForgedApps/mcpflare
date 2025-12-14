@@ -2,9 +2,9 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
   type ExecuteCodeRequest,
@@ -12,16 +12,13 @@ import {
   type JSONSchemaProperty,
   LoadMCPRequestSchema,
   type MCPConfig,
-  type MCPTool,
   type MCPPrompt,
+  type MCPTool,
 } from '../types/mcp.js'
 import { ConfigManager } from '../utils/config-manager.js'
 import { MCPConnectionError, MCPIsolateError } from '../utils/errors.js'
 import logger from '../utils/logger.js'
-import {
-  getCachedSchema,
-  cleanupSchemaCache,
-} from '../utils/mcp-registry.js'
+import { cleanupSchemaCache, getCachedSchema } from '../utils/mcp-registry.js'
 import { validateInput, validateTypeScriptCode } from '../utils/validation.js'
 import { MetricsCollector } from './metrics-collector.js'
 import { WorkerManager } from './worker-manager.js'
@@ -498,7 +495,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
       // Get all guarded MCPs from IDE config
       const configuredMCPs = await this.discoverConfiguredMCPs()
       const guardedMCPs: string[] = []
-      
+
       for (const [mcpName, entry] of configuredMCPs.entries()) {
         // Only include guarded (disabled) MCPs - these are the ones routed through MCPGuard
         if (entry.status === 'disabled') {
@@ -507,8 +504,8 @@ The code runs in an isolated Worker environment with no network access. All MCP 
       }
 
       // Lazy-load prompts from all guarded MCPs
-      const promptLoadPromises = guardedMCPs.map(mcpName => 
-        this.ensureMCPPromptsLoaded(mcpName)
+      const promptLoadPromises = guardedMCPs.map((mcpName) =>
+        this.ensureMCPPromptsLoaded(mcpName),
       )
       await Promise.all(promptLoadPromises)
 
@@ -531,7 +528,10 @@ The code runs in an isolated Worker environment with no network access. All MCP 
             // Format: "github:AssignCodingAgent" which Cursor will display as "mcpguard/github:AssignCodingAgent"
             // This makes it clear which MCP the prompt originates from
             let namespacedName = prompt.name
-            if (!namespacedName.includes(':') && !namespacedName.includes('/')) {
+            if (
+              !namespacedName.includes(':') &&
+              !namespacedName.includes('/')
+            ) {
               // No namespace present, add it with colon separator
               namespacedName = `${mcpName}:${prompt.name}`
             } else if (namespacedName.includes('/')) {
@@ -545,7 +545,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                 namespacedName = `${mcpName}:${prompt.name}`
               }
             }
-            
+
             aggregatedPrompts.push({
               name: namespacedName,
               description: prompt.description,
@@ -559,7 +559,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
         {
           guardedMCPsCount: guardedMCPs.length,
           totalPromptsCount: aggregatedPrompts.length,
-          promptNames: aggregatedPrompts.map(p => p.name),
+          promptNames: aggregatedPrompts.map((p) => p.name),
         },
         'Returning aggregated prompts from guarded MCPs',
       )
@@ -747,7 +747,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
 
         const mcpName = parts[0]
         const actualPromptName = parts.slice(1).join(':') // Strip namespace, keep rest
-        
+
         // Check if the original MCP already had a namespace (e.g., "github/AssignCodingAgent")
         // We'll try both the stripped name and with slash format
 
@@ -850,9 +850,9 @@ The code runs in an isolated Worker environment with no network access. All MCP 
           'Calling getPrompt on MCP client',
         )
 
-        let promptResponse
+        let promptResponse: unknown
         let lastError: unknown
-        
+
         // Try 1: Stripped name (most common)
         try {
           promptResponse = await client.getPrompt({
@@ -861,7 +861,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
           })
         } catch (error: unknown) {
           lastError = error
-          
+
           // Try 2: With slash namespace
           const nameWithSlash = `${mcpName}/${actualPromptName}`
           try {
@@ -875,7 +875,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
             })
           } catch (error2: unknown) {
             lastError = error2
-            
+
             // Try 3: With colon namespace (unlikely but handle it)
             try {
               logger.debug(
@@ -886,7 +886,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
                 name: name,
                 arguments: args,
               })
-            } catch (error3: unknown) {
+            } catch (_error3: unknown) {
               // All attempts failed, throw the last error
               throw lastError
             }
@@ -899,7 +899,19 @@ The code runs in an isolated Worker environment with no network access. All MCP 
         )
 
         // Return the prompt response (contains description and messages)
-        return promptResponse
+        // Ensure proper type for MCP SDK
+        if (
+          promptResponse &&
+          typeof promptResponse === 'object' &&
+          ('description' in promptResponse || 'messages' in promptResponse)
+        ) {
+          return promptResponse as {
+            description?: string
+            messages?: unknown[]
+            [key: string]: unknown
+          }
+        }
+        return promptResponse as { [key: string]: unknown }
       } catch (error: unknown) {
         logger.error({ error, prompt: name }, 'Prompt request failed')
 
@@ -1140,14 +1152,14 @@ The code runs in an isolated Worker environment with no network access. All MCP 
             'NOT_FOUND',
             404,
             {
-            mcp_name: validated.mcp_name,
-            suggestion:
-              'Use search_mcp_tools to discover configured MCPs, or use connect to connect to a new MCP.',
-          },
-        )
-      }
+              mcp_name: validated.mcp_name,
+              suggestion:
+                'Use search_mcp_tools to discover configured MCPs, or use connect to connect to a new MCP.',
+            },
+          )
+        }
 
-      // Only allow guarded MCPs through call_mcp
+        // Only allow guarded MCPs through call_mcp
         // Unguarded MCPs should be called directly by the LLM
         if (mcpEntry.status === 'active') {
           throw new MCPIsolateError(
@@ -1300,8 +1312,12 @@ The code runs in an isolated Worker environment with no network access. All MCP 
         const formattedError = this.formatWranglerError(stderr, stdout)
 
         wranglerError = {
-          stderr: stderr ? this.filterWranglerOutput(stderr).join('\n') : undefined,
-          stdout: stdout ? this.filterWranglerOutput(stdout).join('\n') : undefined,
+          stderr: stderr
+            ? this.filterWranglerOutput(stderr).join('\n')
+            : undefined,
+          stdout: stdout
+            ? this.filterWranglerOutput(stdout).join('\n')
+            : undefined,
           exit_code:
             'exit_code' in errorDetails
               ? Number(errorDetails.exit_code)
@@ -1912,7 +1928,7 @@ console.log(JSON.stringify(result, null, 2));`
     }
 
     if (result.mcpguardRestored) {
-      response.note = `${response.note ? response.note + ' ' : ''}MCPGuard was restored to active config.`
+      response.note = `${response.note ? `${response.note} ` : ''}MCPGuard was restored to active config.`
     }
 
     logger.info(
@@ -2262,7 +2278,9 @@ return result;`
         mcp_name: mcpName,
         is_guarded: isGuarded,
         status: isGuarded
-          ? (loadedInstance ? 'loaded' : 'not_loaded')
+          ? loadedInstance
+            ? 'loaded'
+            : 'not_loaded'
           : 'unguarded',
         config_source: entry.source,
       }
@@ -2282,7 +2300,10 @@ return result;`
         // Use persistent cache if available
         result.tools_count = cachedTools?.length || 0
 
-        if (cachedToolNames && (detail_level === 'tools' || detail_level === 'full')) {
+        if (
+          cachedToolNames &&
+          (detail_level === 'tools' || detail_level === 'full')
+        ) {
           result.tool_names = cachedToolNames
         }
 
@@ -2318,14 +2339,14 @@ return result;`
             {
               instructions:
                 'INSTRUCTIONS FOR USING MCPs:\n' +
-                '1. Locate the MCP you need in the \'mcps\' array below\n' +
-                '2. Check the \'is_guarded\' field:\n' +
+                "1. Locate the MCP you need in the 'mcps' array below\n" +
+                "2. Check the 'is_guarded' field:\n" +
                 '   - If is_guarded=true: This MCP is protected by MCPGuard. Use call_mcp with mcp_name to access it securely\n' +
                 '   - If is_guarded=false: This MCP is loaded directly by your IDE. Use its tools directly (not via call_mcp)\n' +
-                '3. For guarded MCPs, check \'status\' field:\n' +
-                '   - If \'loaded\': Call call_mcp immediately to execute tools\n' +
-                '   - If \'not_loaded\': Call call_mcp to auto-connect and execute tools\n' +
-                '4. Use the \'next_action\' field in each MCP result for specific guidance',
+                "3. For guarded MCPs, check 'status' field:\n" +
+                "   - If 'loaded': Call call_mcp immediately to execute tools\n" +
+                "   - If 'not_loaded': Call call_mcp to auto-connect and execute tools\n" +
+                "4. Use the 'next_action' field in each MCP result for specific guidance",
               mcps: results,
               total_count: results.length,
               loaded_count: results.filter((r) => r.status === 'loaded').length,

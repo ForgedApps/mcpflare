@@ -660,7 +660,7 @@ export class ConfigManager {
       if (detectedIDE) {
         this.configSource = detectedIDE.id
       }
-      
+
       if (existsSync(configPath)) {
         const config = this.readConfigFile(configPath)
         if (config) {
@@ -677,7 +677,10 @@ export class ConfigManager {
       } else {
         // File doesn't exist - return error but still set path for future operations
         errors.push(`Config file not found: ${configPath}`)
-        logger.debug({ path: configPath }, 'Config file does not exist yet, will be created on save')
+        logger.debug(
+          { path: configPath },
+          'Config file does not exist yet, will be created on save',
+        )
       }
     } else {
       // Refresh the config file location

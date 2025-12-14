@@ -75,9 +75,9 @@ export async function selectEnvVarsInteractively(
     })
   } else {
     console.log('\n⚠️  No environment variables found in .env file.')
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: This is documentation text that should display literally
+    const placeholder = '${' + 'VAR_NAME' + '}'
     console.log(
-      '   You can still enter env vars manually or use ${VAR_NAME} syntax.',
+      `   You can still enter env vars manually or use ${placeholder} syntax.`,
     )
   }
 

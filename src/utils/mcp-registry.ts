@@ -1,19 +1,19 @@
 /**
  * MCP Registry
- * 
+ *
  * Reads security isolation settings from the MCP Guard Manager VS Code extension
  * and provides them to the Worker Manager for configuring Worker isolates.
- * 
+ *
  * IMPORTANT: The `isGuarded` state is derived from the IDE config (whether the MCP
  * is in `_mcpguard_disabled`), NOT stored in this settings file. This ensures a
  * single source of truth for MCP guarded state.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import logger from './logger.js'
+import { join } from 'node:path'
 import { ConfigManager } from './config-manager.js'
+import logger from './logger.js'
 
 /**
  * Network access configuration
@@ -72,13 +72,13 @@ export interface MCPSecurityConfig extends MCPSecurityConfigStored {
 export interface MCPSchemaCacheEntry {
   mcpName: string
   configHash: string
-  tools: any[]  // MCPTool array (avoid import cycle)
-  prompts?: any[]  // MCPPrompt array (avoid import cycle)
+  tools: unknown[] // MCPTool array (avoid import cycle)
+  prompts?: unknown[] // MCPPrompt array (avoid import cycle)
   toolNames: string[]
   promptNames?: string[]
   toolCount: number
   promptCount?: number
-  typescriptApi?: string  // Optional, can omit to save disk space
+  typescriptApi?: string // Optional, can omit to save disk space
   cachedAt: string
 }
 
@@ -95,7 +95,15 @@ export interface MCPGuardSettingsStored {
   defaults: Omit<MCPSecurityConfigStored, 'id' | 'mcpName' | 'lastModified'>
   mcpConfigs: MCPSecurityConfigStored[]
   /** Cached token metrics for MCPs */
-  tokenMetricsCache?: Record<string, { toolCount: number; schemaChars: number; estimatedTokens: number; assessedAt: string }>
+  tokenMetricsCache?: Record<
+    string,
+    {
+      toolCount: number
+      schemaChars: number
+      estimatedTokens: number
+      assessedAt: string
+    }
+  >
   /** Cached MCP schemas for fast tool discovery */
   mcpSchemaCache?: MCPSchemaCache
 }
@@ -105,10 +113,21 @@ export interface MCPGuardSettingsStored {
  */
 export interface MCPGuardSettings {
   enabled: boolean
-  defaults: Omit<MCPSecurityConfig, 'id' | 'mcpName' | 'isGuarded' | 'lastModified'>
+  defaults: Omit<
+    MCPSecurityConfig,
+    'id' | 'mcpName' | 'isGuarded' | 'lastModified'
+  >
   mcpConfigs: MCPSecurityConfig[]
   /** Cached token metrics for MCPs */
-  tokenMetricsCache?: Record<string, { toolCount: number; schemaChars: number; estimatedTokens: number; assessedAt: string }>
+  tokenMetricsCache?: Record<
+    string,
+    {
+      toolCount: number
+      schemaChars: number
+      estimatedTokens: number
+      assessedAt: string
+    }
+  >
   /** Cached MCP schemas for fast tool discovery */
   mcpSchemaCache?: MCPSchemaCache
 }
@@ -138,7 +157,10 @@ export interface WorkerIsolationConfig {
 /**
  * Default security configuration
  */
-const DEFAULT_SECURITY_CONFIG: Omit<MCPSecurityConfigStored, 'id' | 'mcpName' | 'lastModified'> = {
+const DEFAULT_SECURITY_CONFIG: Omit<
+  MCPSecurityConfigStored,
+  'id' | 'mcpName' | 'lastModified'
+> = {
   network: {
     enabled: false,
     allowlist: [],
@@ -190,7 +212,9 @@ function isMCPGuardedInIDEConfig(mcpName: string): boolean {
 /**
  * Add isGuarded to a stored config by deriving it from IDE config
  */
-function hydrateConfig(storedConfig: MCPSecurityConfigStored): MCPSecurityConfig {
+function hydrateConfig(
+  storedConfig: MCPSecurityConfigStored,
+): MCPSecurityConfig {
   return {
     ...storedConfig,
     isGuarded: isMCPGuardedInIDEConfig(storedConfig.mcpName),
@@ -210,12 +234,12 @@ function dehydrateConfig(config: MCPSecurityConfig): MCPSecurityConfigStored {
  */
 export function getSettingsPath(): string {
   const configDir = join(homedir(), '.mcpguard')
-  
+
   // Ensure directory exists
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true })
   }
-  
+
   return join(configDir, 'settings.json')
 }
 
@@ -225,31 +249,40 @@ export function getSettingsPath(): string {
  */
 export function loadSettings(): MCPGuardSettings {
   const settingsPath = getSettingsPath()
-  
+
   if (!existsSync(settingsPath)) {
-    logger.debug({ settingsPath }, 'No MCP Guard settings file found, using defaults')
+    logger.debug(
+      { settingsPath },
+      'No MCP Guard settings file found, using defaults',
+    )
     return {
       ...DEFAULT_SETTINGS_STORED,
       mcpConfigs: [],
     }
   }
-  
+
   try {
     const content = readFileSync(settingsPath, 'utf-8')
     const storedSettings = JSON.parse(content) as MCPGuardSettingsStored
-    
+
     // Hydrate configs with computed isGuarded from IDE config
     const hydratedConfigs = storedSettings.mcpConfigs.map(hydrateConfig)
-    
+
     const settings: MCPGuardSettings = {
       ...storedSettings,
       mcpConfigs: hydratedConfigs,
     }
-    
-    logger.debug({ settingsPath, mcpCount: settings.mcpConfigs.length }, 'Loaded MCP Guard settings')
+
+    logger.debug(
+      { settingsPath, mcpCount: settings.mcpConfigs.length },
+      'Loaded MCP Guard settings',
+    )
     return settings
   } catch (error) {
-    logger.warn({ error, settingsPath }, 'Failed to load MCP Guard settings, using defaults')
+    logger.warn(
+      { error, settingsPath },
+      'Failed to load MCP Guard settings, using defaults',
+    )
     return {
       ...DEFAULT_SETTINGS_STORED,
       mcpConfigs: [],
@@ -263,7 +296,7 @@ export function loadSettings(): MCPGuardSettings {
  */
 export function saveSettings(settings: MCPGuardSettings): void {
   const settingsPath = getSettingsPath()
-  
+
   try {
     // Dehydrate configs before saving (remove isGuarded)
     const storedSettings: MCPGuardSettingsStored = {
@@ -272,7 +305,7 @@ export function saveSettings(settings: MCPGuardSettings): void {
       mcpConfigs: settings.mcpConfigs.map(dehydrateConfig),
       tokenMetricsCache: settings.tokenMetricsCache,
     }
-    
+
     writeFileSync(settingsPath, JSON.stringify(storedSettings, null, 2))
     logger.debug({ settingsPath }, 'Saved MCP Guard settings')
   } catch (error) {
@@ -284,14 +317,17 @@ export function saveSettings(settings: MCPGuardSettings): void {
 /**
  * Convert MCPSecurityConfig to WorkerIsolationConfig
  */
-export function toWorkerIsolationConfig(config: MCPSecurityConfig): WorkerIsolationConfig {
+export function toWorkerIsolationConfig(
+  config: MCPSecurityConfig,
+): WorkerIsolationConfig {
   return {
     mcpName: config.mcpName,
     isGuarded: config.isGuarded,
     outbound: {
-      allowedHosts: config.network.enabled && config.network.allowlist.length > 0 
-        ? config.network.allowlist 
-        : null,
+      allowedHosts:
+        config.network.enabled && config.network.allowlist.length > 0
+          ? config.network.allowlist
+          : null,
       allowLocalhost: config.network.enabled && config.network.allowLocalhost,
     },
     fileSystem: {
@@ -312,28 +348,33 @@ export function toWorkerIsolationConfig(config: MCPSecurityConfig): WorkerIsolat
  * Returns undefined if no configuration exists or MCP Guard is disabled
  * isGuarded is derived from IDE config, not stored in settings
  */
-export function getIsolationConfigForMCP(mcpName: string): WorkerIsolationConfig | undefined {
+export function getIsolationConfigForMCP(
+  mcpName: string,
+): WorkerIsolationConfig | undefined {
   const settings = loadSettings()
-  
+
   // Check if MCP Guard is globally enabled
   if (!settings.enabled) {
     logger.debug({ mcpName }, 'MCP Guard is globally disabled')
     return undefined
   }
-  
+
   // Check if MCP is guarded (in _mcpguard_disabled in IDE config)
   const isGuarded = isMCPGuardedInIDEConfig(mcpName)
   if (!isGuarded) {
     logger.debug({ mcpName }, 'MCP is not guarded (not in _mcpguard_disabled)')
     return undefined
   }
-  
+
   // Find config for this MCP (may not exist, use defaults)
-  const config = settings.mcpConfigs.find(c => c.mcpName === mcpName)
-  
+  const config = settings.mcpConfigs.find((c) => c.mcpName === mcpName)
+
   if (!config) {
     // Use default config for guarded MCP without explicit settings
-    logger.debug({ mcpName }, 'No MCP Guard config found for guarded MCP, using defaults')
+    logger.debug(
+      { mcpName },
+      'No MCP Guard config found for guarded MCP, using defaults',
+    )
     const defaultConfig: MCPSecurityConfig = {
       id: `config-${mcpName}-default`,
       mcpName,
@@ -343,7 +384,7 @@ export function getIsolationConfigForMCP(mcpName: string): WorkerIsolationConfig
     }
     return toWorkerIsolationConfig(defaultConfig)
   }
-  
+
   return toWorkerIsolationConfig(config)
 }
 
@@ -354,19 +395,19 @@ export function getIsolationConfigForMCP(mcpName: string): WorkerIsolationConfig
 export function getAllGuardedMCPs(): Map<string, WorkerIsolationConfig> {
   const settings = loadSettings()
   const configs = new Map<string, WorkerIsolationConfig>()
-  
+
   if (!settings.enabled) {
     return configs
   }
-  
+
   // Get list of guarded MCPs from IDE config
   const configManager = getConfigManager()
   const disabledMCPs = configManager.getDisabledMCPs()
-  
+
   for (const mcpName of disabledMCPs) {
     // Find config for this MCP (use defaults if not found)
-    const config = settings.mcpConfigs.find(c => c.mcpName === mcpName)
-    
+    const config = settings.mcpConfigs.find((c) => c.mcpName === mcpName)
+
     if (config) {
       configs.set(mcpName, toWorkerIsolationConfig(config))
     } else {
@@ -381,7 +422,7 @@ export function getAllGuardedMCPs(): Map<string, WorkerIsolationConfig> {
       configs.set(mcpName, toWorkerIsolationConfig(defaultConfig))
     }
   }
-  
+
   logger.debug({ count: configs.size }, 'Loaded guarded MCP configurations')
   return configs
 }
@@ -392,11 +433,11 @@ export function getAllGuardedMCPs(): Map<string, WorkerIsolationConfig> {
  */
 export function isMCPGuarded(mcpName: string): boolean {
   const settings = loadSettings()
-  
+
   if (!settings.enabled) {
     return false
   }
-  
+
   // Guarded status comes from IDE config, not settings
   return isMCPGuardedInIDEConfig(mcpName)
 }
@@ -407,7 +448,7 @@ export function isMCPGuarded(mcpName: string): boolean {
  */
 export function createDefaultConfig(mcpName: string): MCPSecurityConfig {
   const settings = loadSettings()
-  
+
   return {
     id: `config-${mcpName}-${Date.now()}`,
     mcpName,
@@ -424,19 +465,24 @@ export function createDefaultConfig(mcpName: string): MCPSecurityConfig {
  */
 export function upsertMCPConfig(config: MCPSecurityConfig): void {
   const settings = loadSettings()
-  
-  const existingIndex = settings.mcpConfigs.findIndex(c => c.mcpName === config.mcpName)
-  
+
+  const existingIndex = settings.mcpConfigs.findIndex(
+    (c) => c.mcpName === config.mcpName,
+  )
+
   if (existingIndex >= 0) {
     settings.mcpConfigs[existingIndex] = config
   } else {
     settings.mcpConfigs.push(config)
   }
-  
+
   saveSettings(settings)
   // isGuarded is derived from IDE config, so log the actual guarded state
   const actualGuarded = isMCPGuardedInIDEConfig(config.mcpName)
-  logger.info({ mcpName: config.mcpName, isGuarded: actualGuarded }, 'Updated MCP configuration')
+  logger.info(
+    { mcpName: config.mcpName, isGuarded: actualGuarded },
+    'Updated MCP configuration',
+  )
 }
 
 /**
@@ -444,14 +490,14 @@ export function upsertMCPConfig(config: MCPSecurityConfig): void {
  */
 export function removeMCPConfig(mcpName: string): void {
   const settings = loadSettings()
-  
-  settings.mcpConfigs = settings.mcpConfigs.filter(c => c.mcpName !== mcpName)
-  
+
+  settings.mcpConfigs = settings.mcpConfigs.filter((c) => c.mcpName !== mcpName)
+
   // Also clean up token metrics cache
-  if (settings.tokenMetricsCache && settings.tokenMetricsCache[mcpName]) {
+  if (settings.tokenMetricsCache?.[mcpName]) {
     delete settings.tokenMetricsCache[mcpName]
   }
-  
+
   saveSettings(settings)
   logger.info({ mcpName }, 'Removed MCP configuration')
 }
@@ -465,7 +511,7 @@ export function cleanupTokenMetricsCache(): { removed: string[] } {
   const configManager = getConfigManager()
   const allMCPs = configManager.getAllConfiguredMCPs()
   const removed: string[] = []
-  
+
   if (settings.tokenMetricsCache) {
     for (const mcpName of Object.keys(settings.tokenMetricsCache)) {
       if (!allMCPs[mcpName]) {
@@ -473,20 +519,23 @@ export function cleanupTokenMetricsCache(): { removed: string[] } {
         removed.push(mcpName)
       }
     }
-    
+
     if (removed.length > 0) {
       saveSettings(settings)
       logger.info({ removed }, 'Cleaned up stale token metrics cache entries')
     }
   }
-  
+
   return { removed }
 }
 
 /**
  * Get MCP schema from persistent cache
  */
-export function getCachedSchema(mcpName: string, configHash: string): MCPSchemaCacheEntry | null {
+export function getCachedSchema(
+  mcpName: string,
+  configHash: string,
+): MCPSchemaCacheEntry | null {
   const settings = loadSettings()
   const cacheKey = `${mcpName}:${configHash}`
   return settings.mcpSchemaCache?.[cacheKey] || null
@@ -506,7 +555,10 @@ export function saveCachedSchema(entry: MCPSchemaCacheEntry): void {
   settings.mcpSchemaCache[cacheKey] = entry
   saveSettings(settings)
 
-  logger.debug({ mcpName: entry.mcpName, cacheKey, toolCount: entry.toolCount }, 'Saved MCP schema to persistent cache')
+  logger.debug(
+    { mcpName: entry.mcpName, cacheKey, toolCount: entry.toolCount },
+    'Saved MCP schema to persistent cache',
+  )
 }
 
 /**
@@ -545,11 +597,3 @@ export function cleanupSchemaCache(): { removed: string[] } {
  * Re-export the guarded check function for use by other modules
  */
 export { isMCPGuardedInIDEConfig as isGuardedInIDEConfig }
-
-
-
-
-
-
-
-

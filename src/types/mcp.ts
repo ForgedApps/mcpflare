@@ -69,7 +69,9 @@ export const MCPPromptMessageContentSchema = z.union([
   }),
 ])
 
-export type MCPPromptMessageContent = z.infer<typeof MCPPromptMessageContentSchema>
+export type MCPPromptMessageContent = z.infer<
+  typeof MCPPromptMessageContentSchema
+>
 
 // MCP Prompt Message Schema
 export const MCPPromptMessageSchema = z.object({
@@ -105,7 +107,11 @@ export type MCPConfig = z.infer<typeof MCPConfigSchema>
  */
 export function isCommandBasedConfig(
   config: MCPConfig,
-): config is { command: string; args?: string[]; env?: Record<string, string> } {
+): config is {
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+} {
   return 'command' in config
 }
 
@@ -122,18 +128,17 @@ export const LoadMCPRequestSchema = z.object({
 export type LoadMCPRequest = z.infer<typeof LoadMCPRequestSchema>
 
 // Execute Code Request
-export const ExecuteCodeRequestSchema = z.object({
-  mcp_id: z.string().uuid().optional(),
-  mcp_name: z.string().min(1).max(100).optional(),
-  code: z.string().min(1).max(50000),
-  timeout_ms: z.number().min(100).max(60000).default(30000),
-}).refine(
-  (data) => data.mcp_id || data.mcp_name,
-  {
-    message: "Either mcp_id or mcp_name must be provided",
-    path: ["mcp_id"],
-  }
-)
+export const ExecuteCodeRequestSchema = z
+  .object({
+    mcp_id: z.string().uuid().optional(),
+    mcp_name: z.string().min(1).max(100).optional(),
+    code: z.string().min(1).max(50000),
+    timeout_ms: z.number().min(100).max(60000).default(30000),
+  })
+  .refine((data) => data.mcp_id || data.mcp_name, {
+    message: 'Either mcp_id or mcp_name must be provided',
+    path: ['mcp_id'],
+  })
 
 export type ExecuteCodeRequest = z.infer<typeof ExecuteCodeRequestSchema>
 
