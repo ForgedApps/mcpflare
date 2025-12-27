@@ -39,6 +39,8 @@ import { formatWranglerError } from '../utils/wrangler-formatter.js'
 import {
   saveCachedSchema,
   getCachedSchema,
+  getIsolationConfigForMCP,
+  type WorkerIsolationConfig,
 } from '../utils/mcp-registry.js'
 import { SchemaConverter } from './schema-converter.js'
 
@@ -1362,9 +1364,29 @@ export class WorkerManager {
     tools: MCPTool[],
     _typescriptApi: string, // Not used in worker code (causes strict mode syntax errors), kept for API compatibility
     userCode: string,
+    mcpName?: string, // Used to lookup isolation config
   ): Promise<WorkerCode> {
     // Get RPC server URL for parent Worker to call (via Service Binding)
     const rpcUrl = await this.getRPCUrl()
+
+    // Look up isolation config for network allowlist
+    const isolationConfig: WorkerIsolationConfig | undefined = mcpName 
+      ? getIsolationConfigForMCP(mcpName) 
+      : undefined
+    
+    // Determine network access mode based on isolation config
+    // - If no config or network disabled: globalOutbound = null (complete isolation)
+    // - If network enabled with allowlist: globalOutbound = 'allow' with fetch wrapper
+    // - If network enabled with localhost only: globalOutbound = 'allow' with localhost check
+    const networkEnabled = isolationConfig?.outbound?.allowedHosts !== null || 
+                          isolationConfig?.outbound?.allowLocalhost === true
+    const allowedHosts = isolationConfig?.outbound?.allowedHosts || []
+    const allowLocalhost = isolationConfig?.outbound?.allowLocalhost || false
+    
+    logger.debug(
+      { mcpId, mcpName, networkEnabled, allowedHosts, allowLocalhost },
+      'Network isolation config for worker',
+    )
 
     // Generate MCP binding stubs that use Service Binding instead of fetch()
     // The Service Binding (env.MCP) is provided by the parent Worker via ctx.exports
@@ -1405,16 +1427,61 @@ export class WorkerManager {
       },
       'Embedding user code in worker script',
     )
+    // Generate fetch wrapper code if network access is enabled
+    // This wraps the global fetch to enforce domain allowlisting
+    let fetchWrapperCode = ''
+    if (networkEnabled) {
+      const hostsJson = JSON.stringify(allowedHosts)
+      fetchWrapperCode = 
+'    // Network access enabled with domain allowlist\n' +
+'    const __allowedHosts = ' + hostsJson + ';\n' +
+'    const __allowLocalhost = ' + String(allowLocalhost) + ';\n' +
+'    const __originalFetch = globalThis.fetch;\n' +
+'    globalThis.fetch = async (input, init) => {\n' +
+'      const url = typeof input === \'string\' ? new URL(input) : input instanceof URL ? input : new URL(input.url);\n' +
+'      const hostname = url.hostname.toLowerCase();\n' +
+'      \n' +
+'      // Check if localhost is allowed\n' +
+'      const isLocalhost = hostname === \'localhost\' || hostname === \'127.0.0.1\' || hostname === \'::1\';\n' +
+'      if (isLocalhost) {\n' +
+'        if (!__allowLocalhost) {\n' +
+'          throw new Error(`Network access denied: localhost is not allowed. Configure allowLocalhost in MCP Guard settings.`);\n' +
+'        }\n' +
+'        return __originalFetch(input, init);\n' +
+'      }\n' +
+'      \n' +
+'      // Check if host is in allowlist\n' +
+'      const isAllowed = __allowedHosts.some(allowed => {\n' +
+'        const pattern = allowed.toLowerCase();\n' +
+'        // Support wildcard subdomains (e.g., *.github.com)\n' +
+'        if (pattern.startsWith(\'*.\')) {\n' +
+'          const suffix = pattern.slice(1); // .github.com\n' +
+'          return hostname === pattern.slice(2) || hostname.endsWith(suffix);\n' +
+'        }\n' +
+'        return hostname === pattern;\n' +
+'      });\n' +
+'      \n' +
+'      if (!isAllowed) {\n' +
+'        throw new Error(`Network access denied: ${hostname} is not in the allowed hosts list. Allowed: ${__allowedHosts.join(\', \') || \'none\'}`);\n' +
+'      }\n' +
+'      \n' +
+'      return __originalFetch(input, init);\n' +
+'    };\n'
+    }
+
     // Build worker script using string concatenation to avoid esbuild parsing issues
     // We can't mix template literals with string concatenation, so we use all string concatenation
     const workerScript = 
 '// Dynamic Worker that executes AI-generated code\n' +
 '// This Worker is spawned via Worker Loader API from the parent Worker\n' +
-'// Uses Service Bindings for secure MCP access (globalOutbound: null enabled)\n' +
+(networkEnabled 
+  ? '// Network access enabled with domain allowlist enforcement\n'
+  : '// Uses Service Bindings for secure MCP access (globalOutbound: null enabled)\n') +
 'export default {\n' +
 '  async fetch(request, env, ctx) {\n' +
 '    const { code, timeout = 30000 } = await request.json();\n' +
 '    \n' +
+fetchWrapperCode +
 '    // Capture console output\n' +
 '    const logs = [];\n' +
 '    const originalLog = console.log;\n' +
@@ -1530,10 +1597,11 @@ userCode + '\n' +
         MCP_ID: mcpId,
         MCP_RPC_URL: rpcUrl,
       },
-      // Enable true network isolation - dynamic workers cannot use fetch()
-      // MCP access is provided via Service Binding (env.MCP) which bridges to Node.js RPC server
-      // Reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/
-      globalOutbound: null,
+      // Network isolation configuration:
+      // - null: Complete isolation - no fetch() allowed (default, most secure)
+      // - 'allow': Network enabled with domain allowlist enforcement via fetch wrapper
+      // MCP access is always provided via Service Binding (env.MCP) regardless of network config
+      globalOutbound: networkEnabled ? 'allow' : null,
     }
   }
 
@@ -1718,6 +1786,7 @@ userCode + '\n' +
         instance.tools,
         instance.typescript_api,
         code,
+        instance.mcp_name,
       )
 
       // Determine npx command based on platform
