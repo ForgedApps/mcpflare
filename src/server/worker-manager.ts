@@ -1005,6 +1005,31 @@ export class WorkerManager {
     return this.mcpClients.get(mcpId)
   }
 
+  /**
+   * Clear the in-memory schema cache for a specific MCP
+   * This forces a re-fetch of tools on the next connection
+   * Note: This only clears the in-memory cache; persistent cache is managed separately
+   * @param mcpName The name of the MCP to clear cache for
+   * @returns Number of cache entries cleared
+   */
+  clearSchemaCache(mcpName: string): number {
+    let cleared = 0
+    // Schema cache keys are in format "mcpName:configHash"
+    for (const cacheKey of this.schemaCache.keys()) {
+      if (cacheKey.startsWith(`${mcpName}:`)) {
+        this.schemaCache.delete(cacheKey)
+        cleared++
+      }
+    }
+    if (cleared > 0) {
+      logger.info(
+        { mcpName, clearedEntries: cleared },
+        'Cleared in-memory schema cache for MCP',
+      )
+    }
+    return cleared
+  }
+
   // Private helper methods
 
   private async startMCPProcess(

@@ -592,6 +592,32 @@ describe('config-loader', () => {
       expect(saved.assessmentErrorsCache['other-mcp']).toBeDefined();
     });
 
+    it('should clear mcpSchemaCache for specific MCP', () => {
+      const settingsPath = getSettingsPath();
+      addMockFile(settingsPath, JSON.stringify({
+        enabled: true,
+        defaults: {},
+        mcpConfigs: [],
+        mcpSchemaCache: {
+          'test-mcp:abc123': { mcpName: 'test-mcp', configHash: 'abc123', tools: [], toolNames: [], toolCount: 0, cachedAt: '2024-01-01' },
+          'test-mcp:def456': { mcpName: 'test-mcp', configHash: 'def456', tools: [], toolNames: [], toolCount: 0, cachedAt: '2024-01-01' },
+          'other-mcp:xyz789': { mcpName: 'other-mcp', configHash: 'xyz789', tools: [{ name: 'tool1' }], toolNames: ['tool1'], toolCount: 1, cachedAt: '2024-01-01' },
+        },
+      }));
+
+      const result = invalidateMCPCache('test-mcp');
+      
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('mcpSchema');
+      
+      // Verify all cache entries for test-mcp were cleared but not other-mcp
+      const savedContent = getMockFileContent(settingsPath);
+      const saved = JSON.parse(savedContent!);
+      expect(saved.mcpSchemaCache['test-mcp:abc123']).toBeUndefined();
+      expect(saved.mcpSchemaCache['test-mcp:def456']).toBeUndefined();
+      expect(saved.mcpSchemaCache['other-mcp:xyz789']).toBeDefined();
+    });
+
     it('should return success with message when no cache entries found', () => {
       const settingsPath = getSettingsPath();
       addMockFile(settingsPath, JSON.stringify({

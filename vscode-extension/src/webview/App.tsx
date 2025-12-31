@@ -102,6 +102,7 @@ export const App: React.FC = () => {
         globalEnabled={settings.enabled}
         onGlobalToggle={handleGlobalToggle}
         onRefresh={refresh}
+        onOpenMCPConfig={() => postMessage({ type: 'openIDEConfig', source: 'cursor' })}
         isLoading={isLoading}
       />
 

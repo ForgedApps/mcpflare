@@ -629,7 +629,8 @@ export function getAllConfiguredMCPNames(): string[] {
 /**
  * Invalidate cache for a specific MCP
  * Call this when an MCP is deleted, modified, or its guard status changes
- * This forces a fresh assessment on the next load
+ * This forces a fresh assessment on the next load AND clears the schema cache
+ * so that the MCPGuard server will re-fetch tools from the MCP
  */
 export function invalidateMCPCache(mcpName: string): { success: boolean; message: string } {
   const settingsPath = getSettingsPath();
@@ -642,23 +643,42 @@ export function invalidateMCPCache(mcpName: string): { success: boolean; message
     const content = fs.readFileSync(settingsPath, 'utf-8');
     const settings = JSON.parse(content);
     let changed = false;
+    const clearedCaches: string[] = [];
     
     // Clear token metrics cache for this MCP
     if (settings.tokenMetricsCache?.[mcpName]) {
       delete settings.tokenMetricsCache[mcpName];
       changed = true;
+      clearedCaches.push('tokenMetrics');
     }
     
     // Clear assessment errors cache for this MCP
     if (settings.assessmentErrorsCache?.[mcpName]) {
       delete settings.assessmentErrorsCache[mcpName];
       changed = true;
+      clearedCaches.push('assessmentErrors');
+    }
+    
+    // Clear MCP schema cache for this MCP
+    // Schema cache keys are in format "mcpName:configHash", so we need to find and remove all matching entries
+    // This is CRITICAL - without this, the MCPGuard server will continue using cached (possibly empty) schemas
+    if (settings.mcpSchemaCache) {
+      const keysToRemove = Object.keys(settings.mcpSchemaCache).filter(
+        key => key.startsWith(`${mcpName}:`)
+      );
+      for (const key of keysToRemove) {
+        delete settings.mcpSchemaCache[key];
+        changed = true;
+      }
+      if (keysToRemove.length > 0) {
+        clearedCaches.push(`mcpSchema (${keysToRemove.length} entries)`);
+      }
     }
     
     if (changed) {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log(`MCP Guard: Invalidated cache for ${mcpName}`);
-      return { success: true, message: `Cache invalidated for ${mcpName}` };
+      console.log(`MCP Guard: Invalidated cache for ${mcpName} - cleared: ${clearedCaches.join(', ')}`);
+      return { success: true, message: `Cache invalidated for ${mcpName}: ${clearedCaches.join(', ')}` };
     }
     
     return { success: true, message: `No cache entries found for ${mcpName}` };

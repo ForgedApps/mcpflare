@@ -304,6 +304,7 @@ export function saveSettings(settings: MCPGuardSettings): void {
       defaults: settings.defaults,
       mcpConfigs: settings.mcpConfigs.map(dehydrateConfig),
       tokenMetricsCache: settings.tokenMetricsCache,
+      mcpSchemaCache: settings.mcpSchemaCache,
     }
 
     writeFileSync(settingsPath, JSON.stringify(storedSettings, null, 2))
@@ -591,6 +592,51 @@ export function cleanupSchemaCache(): { removed: string[] } {
   }
 
   return { removed }
+}
+
+/**
+ * Clear schema cache for a specific MCP
+ * Call this when an MCP's tools need to be re-fetched (e.g., after auth fix, re-enable, etc.)
+ * @param mcpName The name of the MCP to clear cache for
+ * @returns Object with removed cache keys and success status
+ */
+export function clearMCPSchemaCache(mcpName: string): {
+  removed: string[]
+  success: boolean
+} {
+  const settings = loadSettings()
+  const removed: string[] = []
+
+  if (settings.mcpSchemaCache) {
+    // Schema cache keys are in format "mcpName:configHash"
+    // Find and remove all entries for this MCP
+    for (const cacheKey of Object.keys(settings.mcpSchemaCache)) {
+      if (cacheKey.startsWith(`${mcpName}:`)) {
+        delete settings.mcpSchemaCache[cacheKey]
+        removed.push(cacheKey)
+      }
+    }
+
+    if (removed.length > 0) {
+      try {
+        saveSettings(settings)
+        logger.info(
+          { mcpName, removed },
+          'Cleared schema cache entries for MCP - will re-fetch tools on next connection',
+        )
+      } catch (error) {
+        logger.error(
+          { error, mcpName, removed },
+          'Failed to persist schema cache clear for MCP',
+        )
+        return { removed, success: false }
+      }
+    } else {
+      logger.debug({ mcpName }, 'No schema cache entries found for MCP')
+    }
+  }
+
+  return { removed, success: true }
 }
 
 /**

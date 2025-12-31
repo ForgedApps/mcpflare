@@ -20,6 +20,7 @@ import {
   createDefaultConfig,
   upsertMCPConfig,
   removeMCPConfig,
+  clearMCPSchemaCache,
   type MCPGuardSettings,
   type MCPSecurityConfig,
 } from '../../src/utils/mcp-registry.js'
@@ -707,6 +708,77 @@ describe('mcp-registry', () => {
 
       const saved = JSON.parse(mockFileSystem.get(testSettingsPath)!)
       expect(saved.mcpConfigs).toHaveLength(0)
+    })
+  })
+
+  describe('clearMCPSchemaCache', () => {
+    it('should clear all schema cache entries for a specific MCP', () => {
+      const settings = {
+        enabled: true,
+        defaults: {
+          network: { enabled: false, allowlist: [], allowLocalhost: false },
+          fileSystem: { enabled: false, readPaths: [], writePaths: [] },
+          resourceLimits: { maxExecutionTimeMs: 30000, maxMemoryMB: 128, maxMCPCalls: 100 },
+        },
+        mcpConfigs: [],
+        mcpSchemaCache: {
+          'test-mcp:abc123': { mcpName: 'test-mcp', configHash: 'abc123', tools: [], toolNames: [], toolCount: 0, cachedAt: '2025-01-01' },
+          'test-mcp:def456': { mcpName: 'test-mcp', configHash: 'def456', tools: [], toolNames: [], toolCount: 0, cachedAt: '2025-01-01' },
+          'other-mcp:xyz789': { mcpName: 'other-mcp', configHash: 'xyz789', tools: [{ name: 'tool1' }], toolNames: ['tool1'], toolCount: 1, cachedAt: '2025-01-01' },
+        },
+      }
+      mockFileSystem.set(testSettingsPath, JSON.stringify(settings))
+
+      const result = clearMCPSchemaCache('test-mcp')
+
+      expect(result.success).toBe(true)
+      expect(result.removed).toHaveLength(2)
+      expect(result.removed).toContain('test-mcp:abc123')
+      expect(result.removed).toContain('test-mcp:def456')
+
+      const saved = JSON.parse(mockFileSystem.get(testSettingsPath)!)
+      expect(saved.mcpSchemaCache['test-mcp:abc123']).toBeUndefined()
+      expect(saved.mcpSchemaCache['test-mcp:def456']).toBeUndefined()
+      expect(saved.mcpSchemaCache['other-mcp:xyz789']).toBeDefined()
+    })
+
+    it('should return empty array when no cache entries exist for MCP', () => {
+      const settings = {
+        enabled: true,
+        defaults: {
+          network: { enabled: false, allowlist: [], allowLocalhost: false },
+          fileSystem: { enabled: false, readPaths: [], writePaths: [] },
+          resourceLimits: { maxExecutionTimeMs: 30000, maxMemoryMB: 128, maxMCPCalls: 100 },
+        },
+        mcpConfigs: [],
+        mcpSchemaCache: {
+          'other-mcp:xyz789': { mcpName: 'other-mcp', configHash: 'xyz789', tools: [], toolNames: [], toolCount: 0, cachedAt: '2025-01-01' },
+        },
+      }
+      mockFileSystem.set(testSettingsPath, JSON.stringify(settings))
+
+      const result = clearMCPSchemaCache('nonexistent-mcp')
+
+      expect(result.success).toBe(true)
+      expect(result.removed).toHaveLength(0)
+    })
+
+    it('should handle missing mcpSchemaCache gracefully', () => {
+      const settings = {
+        enabled: true,
+        defaults: {
+          network: { enabled: false, allowlist: [], allowLocalhost: false },
+          fileSystem: { enabled: false, readPaths: [], writePaths: [] },
+          resourceLimits: { maxExecutionTimeMs: 30000, maxMemoryMB: 128, maxMCPCalls: 100 },
+        },
+        mcpConfigs: [],
+      }
+      mockFileSystem.set(testSettingsPath, JSON.stringify(settings))
+
+      const result = clearMCPSchemaCache('test-mcp')
+
+      expect(result.success).toBe(true)
+      expect(result.removed).toHaveLength(0)
     })
   })
 })
