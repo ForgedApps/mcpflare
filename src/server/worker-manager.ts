@@ -1389,29 +1389,76 @@ export class WorkerManager {
     tools: MCPTool[],
     _typescriptApi: string, // Not used in worker code (causes strict mode syntax errors), kept for API compatibility
     userCode: string,
-    mcpName?: string, // Used to lookup isolation config
+    isolationConfig?: WorkerIsolationConfig,
   ): Promise<WorkerCode> {
     // Get RPC server URL for parent Worker to call (via Service Binding)
     const rpcUrl = await this.getRPCUrl()
 
-    // Look up isolation config for network allowlist
-    const isolationConfig: WorkerIsolationConfig | undefined = mcpName 
-      ? getIsolationConfigForMCP(mcpName) 
-      : undefined
-    
-    // Determine network access mode based on isolation config
-    // - If no config or network disabled: globalOutbound = null (complete isolation)
-    // - If network enabled with allowlist: globalOutbound = 'allow' with fetch wrapper
-    // - If network enabled with localhost only: globalOutbound = 'allow' with localhost check
-    const networkEnabled = isolationConfig?.outbound?.allowedHosts !== null || 
-                          isolationConfig?.outbound?.allowLocalhost === true
-    const allowedHosts = isolationConfig?.outbound?.allowedHosts || []
-    const allowLocalhost = isolationConfig?.outbound?.allowLocalhost || false
-    
-    logger.debug(
-      { mcpId, mcpName, networkEnabled, allowedHosts, allowLocalhost },
-      'Network isolation config for worker',
-    )
+    const allowedHostsRaw = isolationConfig?.outbound.allowedHosts ?? null
+    const allowLocalhost = isolationConfig?.outbound.allowLocalhost ?? false
+    const allowedHosts =
+      Array.isArray(allowedHostsRaw) && allowedHostsRaw.length > 0
+        ? allowedHostsRaw
+            .map((h) => String(h).trim().toLowerCase())
+            .filter((h) => h.length > 0)
+        : []
+
+    // Decide whether to allow any outbound at the runtime level.
+    // If neither localhost nor any allowlisted host is enabled, keep true isolation.
+    const networkEnabled = allowLocalhost || allowedHosts.length > 0
+
+    // Generate fetch guard script that enforces per-MCP allowlist.
+    // - When disabled: fetch() always throws a friendly error
+    // - When enabled: allow localhost only if configured; allow non-localhost only if allowlisted
+    const fetchGuardScript = networkEnabled
+      ? '    // MCPGuard network policy: allowlisted fetch()\\n' +
+        `    const __mcpguardAllowedHosts = ${JSON.stringify(allowedHosts)};\\n` +
+        `    const __mcpguardAllowLocalhost = ${allowLocalhost ? 'true' : 'false'};\\n` +
+        '    const __mcpguardNormalizeHost = (h) => String(h || \"\").toLowerCase().replace(/\\.$/, \"\");\\n' +
+        '    const __mcpguardIsLoopback = (h) => h === \"localhost\" || h === \"127.0.0.1\" || h === \"::1\";\\n' +
+        '    const __mcpguardHostAllowed = (host) => {\\n' +
+        '      const hostname = __mcpguardNormalizeHost(host);\\n' +
+        '      for (const entryRaw of __mcpguardAllowedHosts) {\\n' +
+        '        const entry = __mcpguardNormalizeHost(entryRaw);\\n' +
+        '        if (!entry) continue;\\n' +
+        '        if (entry.startsWith(\"*.\") && entry.length > 2) {\\n' +
+        '          const suffix = entry.slice(2);\\n' +
+        '          if (hostname === suffix || hostname.endsWith(\".\" + suffix)) return true;\\n' +
+        '        } else if (hostname === entry) {\\n' +
+        '          return true;\\n' +
+        '        }\\n' +
+        '      }\\n' +
+        '      return false;\\n' +
+        '    };\\n' +
+        '    const __mcpguardOriginalFetch = globalThis.fetch;\\n' +
+        '    globalThis.fetch = async (input, init) => {\\n' +
+        '      let urlStr = \"\";\\n' +
+        '      if (typeof input === \"string\") urlStr = input;\\n' +
+        '      else if (input instanceof URL) urlStr = input.toString();\\n' +
+        '      else if (input instanceof Request) urlStr = input.url;\\n' +
+        '      else if (input && typeof input === \"object\" && \"url\" in input && typeof input.url === \"string\") urlStr = input.url;\\n' +
+        '      if (!urlStr) throw new Error(\"MCPGuard network policy: unsupported fetch() input\");\\n' +
+        '      let u;\\n' +
+        '      try { u = new URL(urlStr); } catch { throw new Error(\"MCPGuard network policy: fetch() requires an absolute URL\"); }\\n' +
+        '      const host = __mcpguardNormalizeHost(u.hostname);\\n' +
+        '      const isLoopback = __mcpguardIsLoopback(host);\\n' +
+        '      if (isLoopback && !__mcpguardAllowLocalhost) {\\n' +
+        '        throw new Error(\"MCPGuard network policy: localhost blocked (\" + host + \")\");\\n' +
+        '      }\\n' +
+        '      if (!isLoopback) {\\n' +
+        '        if (__mcpguardAllowedHosts.length === 0) {\\n' +
+        '          throw new Error(\"MCPGuard network policy: outbound blocked (\" + host + \")\");\\n' +
+        '        }\\n' +
+        '        if (!__mcpguardHostAllowed(host)) {\\n' +
+        '          throw new Error(\"MCPGuard network policy: host not allowlisted (\" + host + \")\");\\n' +
+        '        }\\n' +
+        '      }\\n' +
+        '      return await __mcpguardOriginalFetch(input, init);\\n' +
+        '    };\\n'
+      : '    // MCPGuard network policy: disabled\\n' +
+        '    globalThis.fetch = async () => {\\n' +
+        '      throw new Error(\"MCPGuard network policy: outbound network disabled for this MCP\");\\n' +
+        '    };\\n'
 
     // Generate MCP binding stubs that use Service Binding instead of fetch()
     // The Service Binding (env.MCP) is provided by the parent Worker via ctx.exports
@@ -1452,55 +1499,7 @@ export class WorkerManager {
       },
       'Embedding user code in worker script',
     )
-    // Generate fetch wrapper code if network access is enabled
-    // This wraps the global fetch to enforce domain allowlisting
-    // NOTE: Empty allowlist means "allow all domains" (unrestricted mode)
-    let fetchWrapperCode = ''
-    const isUnrestrictedMode = allowedHosts.length === 0
-    if (networkEnabled) {
-      const hostsJson = JSON.stringify(allowedHosts)
-      fetchWrapperCode = 
-'    // Network access enabled' + (isUnrestrictedMode ? ' (UNRESTRICTED - all domains allowed)\n' : ' with domain allowlist\n') +
-'    const __allowedHosts = ' + hostsJson + ';\n' +
-'    const __allowLocalhost = ' + String(allowLocalhost) + ';\n' +
-'    const __unrestrictedMode = ' + String(isUnrestrictedMode) + '; // Empty allowlist = allow all\n' +
-'    const __originalFetch = globalThis.fetch;\n' +
-'    globalThis.fetch = async (input, init) => {\n' +
-'      const url = typeof input === \'string\' ? new URL(input) : input instanceof URL ? input : new URL(input.url);\n' +
-'      const hostname = url.hostname.toLowerCase();\n' +
-'      \n' +
-'      // Check if localhost is allowed\n' +
-'      const isLocalhost = hostname === \'localhost\' || hostname === \'127.0.0.1\' || hostname === \'::1\';\n' +
-'      if (isLocalhost) {\n' +
-'        if (!__allowLocalhost) {\n' +
-'          throw new Error(`Network access denied: localhost is not allowed. Configure allowLocalhost in MCP Guard settings.`);\n' +
-'        }\n' +
-'        return __originalFetch(input, init);\n' +
-'      }\n' +
-'      \n' +
-'      // If unrestricted mode (empty allowlist), allow all domains\n' +
-'      if (__unrestrictedMode) {\n' +
-'        return __originalFetch(input, init);\n' +
-'      }\n' +
-'      \n' +
-'      // Check if host is in allowlist\n' +
-'      const isAllowed = __allowedHosts.some(allowed => {\n' +
-'        const pattern = allowed.toLowerCase();\n' +
-'        // Support wildcard subdomains (e.g., *.github.com)\n' +
-'        if (pattern.startsWith(\'*.\')) {\n' +
-'          const suffix = pattern.slice(1); // .github.com\n' +
-'          return hostname === pattern.slice(2) || hostname.endsWith(suffix);\n' +
-'        }\n' +
-'        return hostname === pattern;\n' +
-'      });\n' +
-'      \n' +
-'      if (!isAllowed) {\n' +
-'        throw new Error(`Network access denied: ${hostname} is not in the allowed hosts list. Allowed: ${__allowedHosts.join(\', \') || \'none\'}`);\n' +
-'      }\n' +
-'      \n' +
-'      return __originalFetch(input, init);\n' +
-'    };\n'
-    }
+    const fetchWrapperCode = fetchGuardScript
 
     // Build worker script using string concatenation to avoid esbuild parsing issues
     // We can't mix template literals with string concatenation, so we use all string concatenation
@@ -1814,12 +1813,13 @@ userCode + '\n' +
       if (isCLIMode) {
         progress.updateStep(0, 'running')
       }
+      const isolationConfig = getIsolationConfigForMCP(instance.mcp_name)
       const workerCode = await this.generateWorkerCode(
         mcpId,
         instance.tools,
         instance.typescript_api,
         code,
-        instance.mcp_name,
+        isolationConfig,
       )
 
       // Determine npx command based on platform
