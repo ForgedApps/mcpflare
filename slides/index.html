@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Guard — Context Efficiency + Security for AI Agents</title>
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --panel: #111827;
+      --card: #1a2236;
+      --text: #f0f4fc;
+      --muted: #8b9dc3;
+      --accent: #60a5fa;
+      --accent2: #a78bfa;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --border: rgba(255, 255, 255, 0.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --display: "Space Grotesk", var(--sans);
+    }
+
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .deck { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3rem 6rem;
+      background: var(--bg);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.35s ease;
+      z-index: 1;
+    }
+    .slide.active { display: flex; opacity: 1; visibility: visible; z-index: 10; }
+
+    .kicker {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--display);
+      font-size: 3.5rem;
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, var(--text) 30%, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    h2 {
+      font-family: var(--display);
+      font-size: 2.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    h3 { font-size: 1.3rem; font-weight: 600; margin-bottom: 0.5rem; }
+    p, li { font-size: 1.2rem; max-width: 55ch; }
+    .subtitle { font-size: 1.3rem; color: var(--muted); max-width: 55ch; }
+    .accent { color: var(--accent); }
+    .accent2 { color: var(--accent2); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--mono); }
+    .center { text-align: center; align-items: center; }
+    .small { font-size: 1rem; }
+    .mt-1 { margin-top: 1rem; }
+    .mt-2 { margin-top: 2rem; }
+
+    /* =========================================
+       Shield Icon (Slide 1)
+       ========================================= */
+    .shield-icon {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1rem;
+    }
+    .shield-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* =========================================
+       Value Props Row (Slide 1)
+       ========================================= */
+    .value-props {
+      display: flex;
+      gap: 2rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .value-prop {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1.1rem;
+      color: var(--muted);
+    }
+    .value-prop .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--good);
+    }
+
+    /* =========================================
+       Context Buildup Visual (Slide 2)
+       ========================================= */
+    .context-buildup {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      max-width: 850px;
+    }
+    .context-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .context-row .label {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      width: 80px;
+      color: var(--muted);
+      text-align: right;
+    }
+    .context-row .bar-container {
+      flex: 1;
+      height: 36px;
+      background: var(--panel);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+    }
+    .context-row .segment {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #000;
+      min-width: 2px;
+    }
+    .context-row .segment.schema { background: #3b82f6; }
+    .context-row .segment.args { background: var(--warn); }
+    .context-row .segment.prev { background: rgba(139, 157, 195, 0.4); }
+    .context-row .segment.github { background: #3b82f6; }
+    .context-row .remaining {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--good);
+      min-width: 90px;
+    }
+    .context-row .remaining.warn { color: var(--warn); }
+    .context-row .remaining.bad { color: var(--bad); }
+    .context-summary {
+      margin-top: 1.5rem;
+      padding: 1rem 1.5rem;
+      background: var(--card);
+      border-radius: 10px;
+      display: inline-flex;
+      gap: 2rem;
+      font-size: 1rem;
+    }
+    .context-summary .item { display: flex; align-items: center; gap: 0.5rem; }
+    .context-summary .dot { width: 12px; height: 12px; border-radius: 3px; }
+
+    /* =========================================
+       Vulnerability Stack (Slide 3)
+       ========================================= */
+    .vuln-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      max-width: 700px;
+    }
+    .vuln-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--card);
+      border-radius: 10px;
+      border-left: 4px solid var(--bad);
+    }
+    .vuln-item.medium { border-left-color: var(--warn); }
+    .vuln-item.low { border-left-color: var(--muted); }
+    .vuln-item .icon { font-size: 1.5rem; flex-shrink: 0; }
+    .vuln-item .content { flex: 1; }
+    .vuln-item h4 { font-size: 1.1rem; margin-bottom: 0.15rem; }
+    .vuln-item p { font-size: 0.95rem; color: var(--muted); max-width: none; }
+    .vuln-item .likelihood {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(248, 113, 113, 0.2);
+      color: var(--bad);
+    }
+    .vuln-item.medium .likelihood { background: rgba(251, 191, 36, 0.2); color: var(--warn); }
+    .vuln-item.low .likelihood { background: rgba(139, 157, 195, 0.2); color: var(--muted); }
+
+    /* =========================================
+       Solution Flow (Slide 4)
+       ========================================= */
+    .solution-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      margin-top: 1.5rem;
+      max-width: 1000px;
+    }
+    .solution-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .solution-flow .node {
+      width: 100%;
+      max-width: 280px;
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .solution-flow .node.highlight {
+      border-color: var(--good);
+      box-shadow: 0 0 25px rgba(52, 211, 153, 0.2);
+    }
+    .solution-flow .node .icon { font-size: 1.3rem; }
+    .solution-flow .node .text { font-family: var(--mono); font-size: 0.95rem; }
+    .solution-flow .arrow {
+      color: var(--accent);
+      font-size: 1.2rem;
+    }
+    .solution-benefits {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .benefit-card {
+      padding: 1rem 1.25rem;
+      background: var(--card);
+      border-radius: 10px;
+      border-left: 4px solid var(--good);
+    }
+    .benefit-card h4 {
+      font-size: 1rem;
+      color: var(--good);
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .benefit-card p { font-size: 0.95rem; color: var(--muted); max-width: none; }
+
+    /* =========================================
+       Attack → Protect Grid (Slide 4 combined)
+       ========================================= */
+    .attack-protect-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      max-width: 900px;
+      margin-top: 0.5rem;
+    }
+    .attack-protect-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.9rem 1rem;
+      background: var(--card);
+      border-radius: 10px;
+      animation: slideInFade 0.5s ease forwards;
+      opacity: 0;
+    }
+    @keyframes slideInFade {
+      from { opacity: 0; transform: translateX(-15px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .attack-side {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 130px;
+    }
+    .attack-icon { font-size: 1.3rem; }
+    .attack-label {
+      font-size: 0.9rem;
+      color: var(--bad);
+      font-weight: 500;
+    }
+    .arrow-block {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 0.5rem;
+      color: var(--muted);
+    }
+    .arrow-block::before {
+      content: "→";
+      margin-right: 0.5rem;
+      font-size: 1rem;
+    }
+    .block-icon {
+      font-size: 1.2rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    .protect-side {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      margin-left: 0.5rem;
+    }
+    .protect-label {
+      font-size: 0.9rem;
+      color: var(--good);
+      font-weight: 500;
+    }
+    .blocked-code {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: rgba(139, 157, 195, 0.15);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+    }
+    .mcpguard-summary {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+      padding: 1rem 1.5rem;
+      background: var(--panel);
+      border-radius: 10px;
+      border-left: 4px solid var(--good);
+      flex-wrap: wrap;
+    }
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1rem;
+    }
+    .summary-icon { font-size: 1.2rem; }
+
+    /* =========================================
+       Final Slide
+       ========================================= */
+    .final-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      margin-top: 1.5rem;
+      max-width: 1000px;
+      align-items: start;
+    }
+    .final-screenshot {
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 15px 50px rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
+    }
+    .final-screenshot img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .final-cta h3 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+    .final-cta .links {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .final-cta .link-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.1rem;
+    }
+    .final-cta .link-item .icon { font-size: 1.3rem; }
+    .final-cta .link-item code {
+      font-family: var(--mono);
+      background: var(--card);
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+    .final-stats {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .final-stat {
+      text-align: center;
+    }
+    .final-stat .num {
+      font-family: var(--display);
+      font-size: 2rem;
+      font-weight: 700;
+    }
+    .final-stat .label {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* =========================================
+       Progress / Counter / Notes
+       ========================================= */
+    .progress {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 4px;
+      background: var(--panel);
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width: 0;
+      transition: width 0.3s ease;
+    }
+    .slide-counter {
+      position: fixed;
+      bottom: 1.25rem; right: 2rem;
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .nav-hint {
+      position: fixed;
+      bottom: 1.25rem; left: 2rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--muted);
+      opacity: 0.6;
+    }
+    .notes {
+      display: none;
+      position: fixed;
+      bottom: 3rem; left: 2rem; right: 2rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      font-size: 1rem;
+      color: var(--muted);
+      max-height: 30vh;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .notes.visible { display: block; }
+    .notes strong { color: var(--accent); font-family: var(--mono); font-size: 0.85rem; text-transform: uppercase; }
+
+    /* Linear flow diagram (intermediate results) */
+    .linear-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      max-width: 1000px;
+    }
+    .flow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .flow-number {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--bg);
+    }
+    .flow-box {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      border: 2px solid var(--border);
+      min-width: 200px;
+      text-align: center;
+    }
+    .flow-box .flow-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .flow-box code {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      display: block;
+    }
+    .flow-box.context-box {
+      border-color: var(--accent);
+      background: var(--panel);
+    }
+    .context-contents {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .context-item {
+      font-size: 0.85rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+    }
+    .context-item.schemas {
+      background: rgba(59,130,246,0.2);
+      color: #60a5fa;
+    }
+    .context-item.data-in {
+      background: rgba(239,68,68,0.2);
+      color: var(--bad);
+      font-weight: 600;
+    }
+    .flow-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 0.5rem;
+    }
+    .flow-arrow-line {
+      width: 60px;
+      height: 3px;
+      background: var(--warn);
+      position: relative;
+    }
+    .flow-arrow-line::after {
+      content: '';
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      border: 6px solid transparent;
+      border-left-color: var(--warn);
+    }
+    .flow-arrow-data {
+      margin-top: 0.5rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+    .flow-arrow-data .token-count {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--warn);
+    }
+    .flow-arrow-data .token-desc {
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .flow-arrow-data.bad .token-count {
+      color: var(--bad);
+    }
+    .flow-arrow-data.bad .token-desc {
+      color: var(--bad);
+      font-weight: 500;
+    }
+    
+    /* Code mode flow */
+    .codemode-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      max-width: 950px;
+    }
+    .codemode-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .sandbox-box {
+      border-color: var(--good);
+      background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02));
+      min-width: 220px;
+    }
+    .sandbox-contents {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      text-align: center;
+    }
+    .sandbox-item {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+    .sandbox-arrow {
+      font-size: 0.75rem;
+      color: var(--good);
+      font-weight: 600;
+    }
+
+    /* Requirement list */
+    .requirement-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .req-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+    .req-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .req-item strong {
+      display: block;
+      color: var(--text);
+      font-size: 1rem;
+    }
+    .req-detail {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+    .req-detail code {
+      font-family: var(--mono);
+      background: var(--panel);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 1100px) {
+      .slide { padding: 2rem 3rem; }
+      h1 { font-size: 2.75rem; }
+      h2 { font-size: 2rem; }
+      .solution-container, .final-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="deck">
+
+  <!-- ============================================
+       SLIDE 1: Title with Shield + Value Props
+       ============================================ -->
+  <section class="slide center" data-notes="Introduce MCP Guard. Hit the three pillars: token reduction, isolation, zero-trust. Keep it punchy—details come later.">
+    <div class="shield-icon">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L3 7V12C3 17.55 6.84 22.74 12 24C17.16 22.74 21 17.55 21 12V7L12 2Z" fill="#34d399"/>
+        <path d="M10 17L6 13L7.41 11.59L10 14.17L16.59 7.58L18 9L10 17Z" fill="#0a0e1a"/>
+      </svg>
+    </div>
+    <h1>MCP Guard</h1>
+    <p class="subtitle">Secure local sandboxes for MCP servers. Code-mode execution without the risk.</p>
+    
+    <div class="value-props">
+      <div class="value-prop"><span class="dot"></span> Up to 98% token reduction</div>
+      <div class="value-prop"><span class="dot"></span> V8 isolate sandboxing</div>
+      <div class="value-prop"><span class="dot"></span> Zero-trust by default</div>
+    </div>
+    
+    <p class="small muted mt-2">Press <code>→</code> or <code>Space</code> to advance &nbsp;|&nbsp; <code>N</code> for notes</p>
+  </section>
+
+  <!-- ============================================
+       SLIDE 2: Context Buildup (Combined)
+       ============================================ -->
+  <section class="slide" data-notes="LLMs are stateless—each API call is independent. The model needs tool schemas every request to know what's available. GitHub MCP has 87 tools = ~45k tokens. That's 22% of a 200k context window just for schemas, re-sent every single turn.">
+    <div class="kicker">The problem</div>
+    <h2>Context fills up fast</h2>
+    <p class="subtitle" style="margin-bottom: 0.5rem;">LLMs are <b>stateless</b> — tool schemas must be sent <em>every request</em> so the model knows what's available.</p>
+    
+    <div style="display: flex; gap: 2rem; margin-top: 1rem; align-items: flex-start;">
+      <div style="background: var(--card); border-radius: 10px; padding: 1rem 1.25rem; text-align: center; border-left: 4px solid #3b82f6;">
+        <div style="font-family: var(--mono); font-size: 0.8rem; color: #3b82f6;">GitHub MCP</div>
+        <div style="font-family: var(--display); font-size: 2rem; font-weight: 700; color: #3b82f6;">87 tools</div>
+        <div style="font-size: 0.9rem; color: var(--muted);">~45k tokens/request</div>
+      </div>
+      
+      <div class="context-buildup" style="flex: 1; margin-top: 0;">
+        <div class="context-row">
+          <span class="label" style="width: 130px; font-size: 0.8rem;">Initial request</span>
+          <div class="bar-container">
+            <div class="segment schema" style="width: 22%">87 schemas</div>
+          </div>
+          <span class="remaining">78% free</span>
+        </div>
+        <div class="context-row">
+          <span class="label" style="width: 130px;"><code style="font-size: 0.75rem; background: var(--card); padding: 0.1rem 0.3rem; border-radius: 3px;">search_repos</code></span>
+          <div class="bar-container">
+            <div class="segment prev" style="width: 22%"></div>
+            <div class="segment schema" style="width: 22%">87 schemas</div>
+            <div class="segment args" style="width: 8%">+call</div>
+          </div>
+          <span class="remaining">48% free</span>
+        </div>
+        <div class="context-row">
+          <span class="label" style="width: 130px;"><code style="font-size: 0.75rem; background: var(--card); padding: 0.1rem 0.3rem; border-radius: 3px;">list_issues</code></span>
+          <div class="bar-container">
+            <div class="segment prev" style="width: 52%"></div>
+            <div class="segment schema" style="width: 22%">87 schemas</div>
+            <div class="segment args" style="width: 8%">+call</div>
+          </div>
+          <span class="remaining warn">18% free</span>
+        </div>
+        <div class="context-row">
+          <span class="label" style="width: 130px;"><code style="font-size: 0.75rem; background: var(--card); padding: 0.1rem 0.3rem; border-radius: 3px;">get_issue</code></span>
+          <div class="bar-container">
+            <div class="segment prev" style="width: 82%"></div>
+            <div class="segment schema" style="width: 15%">87...</div>
+          </div>
+          <span class="remaining bad">3% left!</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="context-summary">
+      <div class="item"><span class="dot" style="background: #3b82f6"></span> GitHub MCP (87 schemas) re-sent every turn</div>
+      <div class="item"><span class="dot" style="background: rgba(139,157,195,0.4)"></span> Previous context retained</div>
+      <div class="item"><span class="dot" style="background: var(--warn)"></span> + call args/response</div>
+    </div>
+    
+    <div style="margin-top: 1.5rem; display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--muted);">
+      <a href="https://www.anthropic.com/engineering/code-execution-with-mcp" target="_blank" style="color: var(--accent); text-decoration: none; display: flex; align-items: center; gap: 0.4rem;">
+        <span style="font-size: 1rem;">📄</span> Anthropic: "Code execution with MCP"
+      </a>
+      <a href="https://blog.cloudflare.com/code-mode/" target="_blank" style="color: var(--accent); text-decoration: none; display: flex; align-items: center; gap: 0.4rem;">
+        <span style="font-size: 1rem;">📄</span> Cloudflare: "Code Mode: the better way to use MCP"
+      </a>
+    </div>
+  </section>
+
+  <!-- ============================================
+       SLIDE 3: Wasteful Cycle
+       ============================================ -->
+  <section class="slide" data-notes="This slide shows WHY the repetition is so wasteful. Every intermediate result from one tool call must pass through context to reach the next tool call. A 50k token document gets loaded AND written out again.">
+    <div class="kicker">The problem</div>
+    <h2>Intermediate results waste context</h2>
+    <p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 1.5rem;">For multi-step tasks, every intermediate result must pass through the model's context window.</p>
+    
+    <div class="linear-flow">
+      <!-- Step 1: Initial tool call -->
+      <div class="flow-step">
+        <div class="flow-number">1</div>
+        <div class="flow-box">
+          <div class="flow-label">TOOL CALL</div>
+          <code>gdrive.getDocument(doc_id)</code>
+        </div>
+      </div>
+      
+      <div class="flow-arrow">
+        <div class="flow-arrow-line"></div>
+        <div class="flow-arrow-data">
+          <span class="token-count">50,000 tokens</span>
+          <span class="token-desc">full transcript</span>
+        </div>
+      </div>
+      
+      <!-- Step 2: Context Window -->
+      <div class="flow-step context-step">
+        <div class="flow-number">2</div>
+        <div class="flow-box context-box">
+          <div class="flow-label">CONTEXT WINDOW</div>
+          <div class="context-contents">
+            <div class="context-item schemas">87 schemas</div>
+            <div class="context-item data-in">+ 50,000 transcript</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flow-arrow">
+        <div class="flow-arrow-line"></div>
+        <div class="flow-arrow-data bad">
+          <span class="token-count">+50,000 tokens</span>
+          <span class="token-desc">written out again!</span>
+        </div>
+      </div>
+      
+      <!-- Step 3: Subsequent tool call -->
+      <div class="flow-step">
+        <div class="flow-number">3</div>
+        <div class="flow-box">
+          <div class="flow-label">TOOL CALL</div>
+          <code>salesforce.update(transcript)</code>
+        </div>
+      </div>
+    </div>
+    
+    <div style="margin-top: 2rem; padding: 1rem 1.5rem; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05)); border-radius: 10px; display: inline-flex; align-items: center; gap: 1rem; border-left: 4px solid var(--bad);">
+      <span style="font-size: 1.5rem;">⚠️</span>
+      <div style="font-size: 1.05rem;">
+        <strong style="color: var(--bad);">The same 50k tokens pass through context twice</strong> — once in, once out.
+        <div style="font-size: 0.9rem; color: var(--muted); margin-top: 0.25rem;">This wastes context space and increases the risk of truncation and errors.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       SLIDE 4: Code Mode - Solution + New Risk
+       ============================================ -->
+  <section class="slide" data-notes="Code mode solves the intermediate results problem - data stays in the sandbox, only final result returns. BUT this means running arbitrary code, which opens attack vectors.">
+    <div class="kicker">The solution</div>
+    <h2>Code mode keeps data local</h2>
+    <p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 1.5rem;">Instead of passing data through context, run code that processes it locally.</p>
+    
+    <!-- Code mode flow diagram -->
+    <div class="codemode-flow">
+      <div class="codemode-step">
+        <div class="flow-number" style="background: var(--accent);">1</div>
+        <div class="flow-box">
+          <div class="flow-label">SEND CODE</div>
+          <div style="font-family: var(--mono); font-size: 0.75rem; color: var(--accent); line-height: 1.4;">
+            const doc = gdrive.get(id);<br>
+            salesforce.update(doc);
+          </div>
+        </div>
+      </div>
+      
+      <div class="flow-arrow">
+        <div class="flow-arrow-line" style="background: var(--good);"></div>
+        <div class="flow-arrow-data" style="color: var(--good);">
+          <span class="token-count" style="color: var(--good);">98% fewer tokens</span>
+          <span class="token-desc">just the code</span>
+        </div>
+      </div>
+      
+      <div class="codemode-step">
+        <div class="flow-number" style="background: var(--good);">2</div>
+        <div class="flow-box sandbox-box">
+          <div class="flow-label">SANDBOX EXECUTION</div>
+          <div class="sandbox-contents">
+            <div class="sandbox-item">gdrive.get() → <span style="color: var(--warn);">50,000</span></div>
+            <div class="sandbox-arrow">↓ stays local</div>
+            <div class="sandbox-item">salesforce.update()</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flow-arrow">
+        <div class="flow-arrow-line" style="background: var(--good);"></div>
+        <div class="flow-arrow-data" style="color: var(--good);">
+          <span class="token-count" style="color: var(--good);">Only 50 tokens</span>
+        </div>
+      </div>
+      
+      <div class="codemode-step">
+        <div class="flow-number" style="background: var(--good);">3</div>
+        <div class="flow-box">
+          <div class="flow-label">RESULT</div>
+          <code style="font-size: 0.85rem;">{ success: true }</code>
+        </div>
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 1.5rem; margin-top: 1.5rem; max-width: 900px;">
+      <div style="flex: 1; padding: 1rem; background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05)); border-radius: 10px; border-left: 4px solid var(--good);">
+        <div style="font-size: 0.9rem;">
+          <strong style="color: var(--good);">✓ 50k tokens never touch context</strong><br>
+          <span style="color: var(--muted); font-size: 0.85rem;">Data stays in sandbox, only result returns</span>
+        </div>
+      </div>
+      <div style="flex: 1; padding: 1rem; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05)); border-radius: 10px; border-left: 4px solid var(--bad);">
+        <div style="font-size: 0.9rem;">
+          <strong style="color: var(--bad);">⚠️ But: Arbitrary code execution</strong><br>
+          <span style="color: var(--muted); font-size: 0.85rem;">Malicious code could exfiltrate data, access files, or execute commands...</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       SLIDE 4: What We Need
+       ============================================ -->
+  <section class="slide" data-notes="Now that we've identified code mode as the efficiency solution but shown its risks, lay out what an ideal solution requires. This sets up MCP Guard as the answer.">
+    <div class="kicker">The requirements</div>
+    <h2>What we need</h2>
+    <p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 2rem;">To get code mode efficiency without the risks, we need:</p>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 900px;">
+      
+      <!-- Efficiency requirements -->
+      <div style="background: var(--card); border-radius: 12px; padding: 1.5rem; border-top: 4px solid var(--good);">
+        <h3 style="color: var(--good); margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>⚡</span> Efficiency
+        </h3>
+        <div class="requirement-list">
+          <div class="req-item">
+            <span class="req-icon">📦</span>
+            <div>
+              <strong>Single schema</strong>
+              <div class="req-detail">One wrapper, not 87 tool definitions</div>
+            </div>
+          </div>
+          <div class="req-item">
+            <span class="req-icon">🔄</span>
+            <div>
+              <strong>Batch operations</strong>
+              <div class="req-detail">Multiple MCP calls in one request</div>
+            </div>
+          </div>
+          <div class="req-item">
+            <span class="req-icon">📉</span>
+            <div>
+              <strong>No repeated context</strong>
+              <div class="req-detail">Stop re-sending schemas every turn</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Security requirements -->
+      <div style="background: var(--card); border-radius: 12px; padding: 1.5rem; border-top: 4px solid var(--accent2);">
+        <h3 style="color: var(--accent2); margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🔒</span> Security
+        </h3>
+        <div class="requirement-list">
+          <div class="req-item">
+            <span class="req-icon">🌐</span>
+            <div>
+              <strong>Block network access</strong>
+              <div class="req-detail">No <code>fetch()</code> to exfiltrate data</div>
+            </div>
+          </div>
+          <div class="req-item">
+            <span class="req-icon">📁</span>
+            <div>
+              <strong>Block filesystem</strong>
+              <div class="req-detail">No reading ~/.ssh or secrets</div>
+            </div>
+          </div>
+          <div class="req-item">
+            <span class="req-icon">🐚</span>
+            <div>
+              <strong>Block shell/process</strong>
+              <div class="req-detail">No <code>exec()</code> or <code>process.env</code></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+    <div style="margin-top: 2rem; padding: 1rem 1.5rem; background: var(--panel); border-radius: 10px; display: inline-flex; align-items: center; gap: 1rem; border-left: 4px solid var(--accent);">
+      <span style="font-size: 1.5rem;">🎯</span>
+      <div style="font-size: 1.1rem;">
+        <strong>Goal:</strong> Run arbitrary agent code in a <strong style="color: var(--accent2);">zero-trust deny-by-default sandbox</strong> that only exposes MCP tools.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       SLIDE 6: Introducing MCP Guard
+       ============================================ -->
+  <section class="slide" data-notes="Now introduce MCP Guard as the solution that meets all the requirements. Show the extension screenshot and stats.">
+    <div class="kicker">The solution</div>
+    <h2>MCP Guard</h2>
+    <p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 1.5rem;">Wraps MCP tools in isolated V8 sandboxes. Meets all requirements.</p>
+    
+    <div class="mcpguard-summary" style="margin-bottom: 1.5rem;">
+      <div class="summary-item">
+        <span class="summary-icon">📦</span>
+        <span>1 schema (not 87)</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-icon">⚡</span>
+        <span>Many ops → 1 call</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-icon">🔒</span>
+        <span>V8 sandbox</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-icon">🚫</span>
+        <span>Deny by default</span>
+      </div>
+    </div>
+    
+    <div class="final-stats" style="margin-bottom: 1.5rem;">
+      <div class="final-stat">
+        <div class="num good">98%</div>
+        <div class="label">token reduction</div>
+      </div>
+      <div class="final-stat">
+        <div class="num accent2">0</div>
+        <div class="label">default permissions</div>
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 2rem; align-items: flex-start; max-width: 1000px;">
+      <div class="final-screenshot" style="width: 500px; height: 580px;">
+        <img src="extension-ui.png" alt="MCP Guard Extension" style="width: 100%; height: 100%; object-fit: contain;" />
+      </div>
+      
+      <div style="flex: 0 0 auto;">
+        <h3 style="margin: 0 0 1rem; font-size: 1.3rem;">Install</h3>
+        <div class="links">
+          <div class="link-item">
+            <span class="icon">📦</span>
+            <span>VS Code Extension: <code>MCP Guard</code></span>
+          </div>
+          <div class="link-item">
+            <span class="icon">🐙</span>
+            <code>github.com/jgentes/mcpguard</code>
+          </div>
+        </div>
+        
+        <p class="mt-2 muted">Questions?</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+<div class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">7</span></div>
+<div class="nav-hint">← → Space | N = notes</div>
+<div class="notes" id="notesPanel"></div>
+
+<script>
+(() => {
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+  let notesVisible = false;
+
+  const progressBar = document.getElementById('progressBar');
+  const currentSlideEl = document.getElementById('currentSlide');
+  const totalSlidesEl = document.getElementById('totalSlides');
+  const notesPanel = document.getElementById('notesPanel');
+
+  totalSlidesEl.textContent = total;
+
+  function showSlide(index) {
+    if (index < 0) index = 0;
+    if (index >= total) index = total - 1;
+    current = index;
+    slides.forEach((s, i) => s.classList.toggle('active', i === current));
+    progressBar.style.width = ((current + 1) / total * 100) + '%';
+    currentSlideEl.textContent = current + 1;
+    const notes = slides[current].dataset.notes || '(No notes)';
+    notesPanel.innerHTML = '<strong>Notes</strong><br>' + notes;
+  }
+
+  function toggleNotes() {
+    notesVisible = !notesVisible;
+    notesPanel.classList.toggle('visible', notesVisible);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); showSlide(current + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); showSlide(current - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); showSlide(0); }
+    else if (e.key === 'End') { e.preventDefault(); showSlide(total - 1); }
+    else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); toggleNotes(); }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
+  document.addEventListener('touchend', e => {
+    const diff = e.changedTouches[0].screenX - touchStartX;
+    if (diff > 50) showSlide(current - 1);
+    else if (diff < -50) showSlide(current + 1);
+  });
+
+  showSlide(0);
+})();
+</script>
+
+</body>
+</html>
