@@ -1403,62 +1403,14 @@ export class WorkerManager {
             .filter((h) => h.length > 0)
         : []
 
-    // Decide whether to allow any outbound at the runtime level.
-    // If neither localhost nor any allowlisted host is enabled, keep true isolation.
+    // Network access is controlled via globalOutbound (set to FetchProxy when enabled).
+    // When enabled, we wrap fetch() to add allowlist headers that FetchProxy reads.
+    // When disabled, globalOutbound is null and fetch() will not be available.
     const networkEnabled = allowLocalhost || allowedHosts.length > 0
 
-    // Generate fetch guard script that enforces per-MCP allowlist.
-    // - When disabled: fetch() always throws a friendly error
-    // - When enabled: allow localhost only if configured; allow non-localhost only if allowlisted
-    const fetchGuardScript = networkEnabled
-      ? '    // MCPGuard network policy: allowlisted fetch()\\n' +
-        `    const __mcpguardAllowedHosts = ${JSON.stringify(allowedHosts)};\\n` +
-        `    const __mcpguardAllowLocalhost = ${allowLocalhost ? 'true' : 'false'};\\n` +
-        '    const __mcpguardNormalizeHost = (h) => String(h || \"\").toLowerCase().replace(/\\.$/, \"\");\\n' +
-        '    const __mcpguardIsLoopback = (h) => h === \"localhost\" || h === \"127.0.0.1\" || h === \"::1\";\\n' +
-        '    const __mcpguardHostAllowed = (host) => {\\n' +
-        '      const hostname = __mcpguardNormalizeHost(host);\\n' +
-        '      for (const entryRaw of __mcpguardAllowedHosts) {\\n' +
-        '        const entry = __mcpguardNormalizeHost(entryRaw);\\n' +
-        '        if (!entry) continue;\\n' +
-        '        if (entry.startsWith(\"*.\") && entry.length > 2) {\\n' +
-        '          const suffix = entry.slice(2);\\n' +
-        '          if (hostname === suffix || hostname.endsWith(\".\" + suffix)) return true;\\n' +
-        '        } else if (hostname === entry) {\\n' +
-        '          return true;\\n' +
-        '        }\\n' +
-        '      }\\n' +
-        '      return false;\\n' +
-        '    };\\n' +
-        '    const __mcpguardOriginalFetch = globalThis.fetch;\\n' +
-        '    globalThis.fetch = async (input, init) => {\\n' +
-        '      let urlStr = \"\";\\n' +
-        '      if (typeof input === \"string\") urlStr = input;\\n' +
-        '      else if (input instanceof URL) urlStr = input.toString();\\n' +
-        '      else if (input instanceof Request) urlStr = input.url;\\n' +
-        '      else if (input && typeof input === \"object\" && \"url\" in input && typeof input.url === \"string\") urlStr = input.url;\\n' +
-        '      if (!urlStr) throw new Error(\"MCPGuard network policy: unsupported fetch() input\");\\n' +
-        '      let u;\\n' +
-        '      try { u = new URL(urlStr); } catch { throw new Error(\"MCPGuard network policy: fetch() requires an absolute URL\"); }\\n' +
-        '      const host = __mcpguardNormalizeHost(u.hostname);\\n' +
-        '      const isLoopback = __mcpguardIsLoopback(host);\\n' +
-        '      if (isLoopback && !__mcpguardAllowLocalhost) {\\n' +
-        '        throw new Error(\"MCPGuard network policy: localhost blocked (\" + host + \")\");\\n' +
-        '      }\\n' +
-        '      if (!isLoopback) {\\n' +
-        '        if (__mcpguardAllowedHosts.length === 0) {\\n' +
-        '          throw new Error(\"MCPGuard network policy: outbound blocked (\" + host + \")\");\\n' +
-        '        }\\n' +
-        '        if (!__mcpguardHostAllowed(host)) {\\n' +
-        '          throw new Error(\"MCPGuard network policy: host not allowlisted (\" + host + \")\");\\n' +
-        '        }\\n' +
-        '      }\\n' +
-        '      return await __mcpguardOriginalFetch(input, init);\\n' +
-        '    };\\n'
-      : '    // MCPGuard network policy: disabled\\n' +
-        '    globalThis.fetch = async () => {\\n' +
-        '      throw new Error(\"MCPGuard network policy: outbound network disabled for this MCP\");\\n' +
-        '    };\\n'
+    // Note: The main fetch wrapper is defined at module level (see modulePrelude below)
+    // For network-disabled case, globalOutbound is null and fetch() won't be available
+    // No wrapper needed - user will get Cloudflare's native error message
 
     // Generate MCP binding stubs that use Service Binding instead of fetch()
     // The Service Binding (env.MCP) is provided by the parent Worker via ctx.exports
@@ -1499,21 +1451,51 @@ export class WorkerManager {
       },
       'Embedding user code in worker script',
     )
-    const fetchWrapperCode = fetchGuardScript
 
     // Build worker script using string concatenation to avoid esbuild parsing issues
     // We can't mix template literals with string concatenation, so we use all string concatenation
+    // 
+    // IMPORTANT: The fetch wrapper is placed at MODULE LEVEL (not inside the fetch handler)
+    // This ensures it runs before the Cloudflare runtime can freeze globalThis.fetch
+    const modulePrelude = networkEnabled
+      ? '// MCPGuard: Fetch wrapper at module level to intercept before runtime freezes fetch\n' +
+        `const __mcpguardAllowedHosts = ${JSON.stringify(allowedHosts.join(','))};\n` +
+        `const __mcpguardAllowLocalhost = ${allowLocalhost ? '"true"' : '"false"'};\n` +
+        'const __mcpguardOriginalFetch = globalThis.fetch;\n' +
+        'const __mcpguardFetchWrapper = async (input, init) => {\n' +
+        '  const headers = new Headers(init?.headers || {});\n' +
+        '  headers.set("X-MCPGuard-Allowed-Hosts", __mcpguardAllowedHosts);\n' +
+        '  headers.set("X-MCPGuard-Allow-Localhost", __mcpguardAllowLocalhost);\n' +
+        '  const response = await __mcpguardOriginalFetch(input, { ...init, headers });\n' +
+        '  if (response.status === 403) {\n' +
+        '    try {\n' +
+        '      const body = await response.clone().json();\n' +
+        '      if (body.error && body.error.startsWith("MCPGuard network policy:")) {\n' +
+        '        throw new Error(body.error);\n' +
+        '      }\n' +
+        '    } catch (e) {\n' +
+        '      if (e.message && e.message.startsWith("MCPGuard network policy:")) {\n' +
+        '        throw e;\n' +
+        '      }\n' +
+        '    }\n' +
+        '  }\n' +
+        '  return response;\n' +
+        '};\n' +
+        '// Override globalThis.fetch at module level\n' +
+        'globalThis.fetch = __mcpguardFetchWrapper;\n\n'
+      : ''
+    
     const workerScript = 
 '// Dynamic Worker that executes AI-generated code\n' +
 '// This Worker is spawned via Worker Loader API from the parent Worker\n' +
 (networkEnabled 
   ? '// Network access enabled with domain allowlist enforcement\n'
   : '// Uses Service Bindings for secure MCP access (globalOutbound: null enabled)\n') +
+modulePrelude +
 'export default {\n' +
 '  async fetch(request, env, ctx) {\n' +
 '    const { code, timeout = 30000 } = await request.json();\n' +
 '    \n' +
-fetchWrapperCode +
 '    // Capture console output\n' +
 '    const logs = [];\n' +
 '    const originalLog = console.log;\n' +
@@ -1573,6 +1555,7 @@ mcpBindingStubs + '\n' +
 '      // Note: Function constructor and eval() are disallowed in Workers (CSP), so code must be embedded directly\n' +
 '      const executeWithTimeout = async () => {\n' +
 '        // User code is embedded below - it has access to \'mcp\' and \'env\'\n' +
+'        // fetch() is our wrapped version (set at module level)\n' +
 '        // User code embedded below\n' +
 userCode + '\n' +
 '      };\n' +
@@ -1628,12 +1611,19 @@ userCode + '\n' +
         // The parent Worker will replace these with the actual Service Binding (env.MCP)
         MCP_ID: mcpId,
         MCP_RPC_URL: rpcUrl,
+        // NETWORK_ENABLED flag tells parent Worker to create FetchProxy as globalOutbound
+        // The allowlist itself is passed via headers from the dynamic worker
+        NETWORK_ENABLED: networkEnabled ? 'true' : 'false',
       },
       // Network isolation configuration:
-      // - null: Complete isolation - no fetch() allowed (default, most secure)
-      // - 'allow': Network enabled with domain allowlist enforcement via fetch wrapper
-      // MCP access is always provided via Service Binding (env.MCP) regardless of network config
-      globalOutbound: networkEnabled ? 'allow' : null,
+      // - null: Complete isolation - fetch() will not be available (default)
+      // - FetchProxy: Controlled access - parent Worker sets globalOutbound to FetchProxy
+      // 
+      // The parent Worker (runtime.ts) will override this with FetchProxy when NETWORK_ENABLED=true.
+      // FetchProxy enforces the allowlist and proxies allowed requests.
+      // When NETWORK_ENABLED=false, globalOutbound stays null (no fetch).
+      // MCP access is always provided via Service Binding (env.MCP) regardless of network config.
+      globalOutbound: null,
     }
   }
 

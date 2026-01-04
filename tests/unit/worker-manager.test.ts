@@ -153,7 +153,7 @@ describe('WorkerManager', () => {
       expect(workerCode.globalOutbound).toBeNull() // True isolation enabled
     })
 
-    it('should keep outbound disabled by default (friendly fetch error)', async () => {
+    it('should keep outbound disabled by default', async () => {
       const tools: MCPTool[] = []
       const generateCode = (manager as any).generateWorkerCode.bind(manager)
 
@@ -164,15 +164,17 @@ describe('WorkerManager', () => {
         'console.log("test");',
       )
 
+      // globalOutbound: null means no network access
       expect(workerCode.globalOutbound).toBeNull()
+      // NETWORK_ENABLED should be 'false' when no network config
+      expect(workerCode.env?.NETWORK_ENABLED).toBe('false')
       const code = workerCode.modules['worker.js'] as string
-      expect(code).toContain(
-        'MCPGuard network policy: outbound network disabled',
-      )
-      expect(code).toContain('globalThis.fetch')
+      // Should NOT have module-level fetch wrapper when network disabled
+      expect(code).not.toContain('__mcpguardFetchWrapper')
+      expect(code).not.toContain('X-MCPGuard-Allowed-Hosts')
     })
 
-    it('should allow outbound when allowlist has entries', async () => {
+    it('should enable network via FetchProxy when allowlist has entries', async () => {
       const tools: MCPTool[] = []
       const generateCode = (manager as any).generateWorkerCode.bind(manager)
 
@@ -192,15 +194,19 @@ describe('WorkerManager', () => {
         isolationConfig,
       )
 
-      expect(workerCode.globalOutbound).toBe('allow')
+      // globalOutbound is always null - parent Worker sets it to FetchProxy when needed
+      expect(workerCode.globalOutbound).toBeNull()
+      // Network is enabled via NETWORK_ENABLED env flag
+      expect(workerCode.env?.NETWORK_ENABLED).toBe('true')
       const code = workerCode.modules['worker.js'] as string
+      // Module-level fetch wrapper with allowlist as comma-separated string
       expect(code).toContain(
-        'const __mcpguardAllowedHosts = ["api.github.com"]',
+        'const __mcpguardAllowedHosts = "api.github.com"',
       )
-      expect(code).toContain('MCPGuard network policy: host not allowlisted')
+      expect(code).toContain('X-MCPGuard-Allowed-Hosts')
     })
 
-    it('should allow outbound when allowLocalhost is enabled', async () => {
+    it('should enable network via FetchProxy when allowLocalhost is enabled', async () => {
       const tools: MCPTool[] = []
       const generateCode = (manager as any).generateWorkerCode.bind(manager)
 
@@ -220,10 +226,14 @@ describe('WorkerManager', () => {
         isolationConfig,
       )
 
-      expect(workerCode.globalOutbound).toBe('allow')
+      // globalOutbound is always null - parent Worker sets it to FetchProxy when needed
+      expect(workerCode.globalOutbound).toBeNull()
+      // Network is enabled via NETWORK_ENABLED env flag
+      expect(workerCode.env?.NETWORK_ENABLED).toBe('true')
       const code = workerCode.modules['worker.js'] as string
-      expect(code).toContain('const __mcpguardAllowLocalhost = true')
-      expect(code).toContain('MCPGuard network policy: outbound blocked')
+      // Module-level fetch wrapper with localhost allowed
+      expect(code).toContain('const __mcpguardAllowLocalhost = "true"')
+      expect(code).toContain('X-MCPGuard-Allow-Localhost')
     })
 
     it('should include tool bindings in generated code', async () => {

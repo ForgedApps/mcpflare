@@ -144,6 +144,14 @@ describe('Security: Network Allowlist Enforcement', () => {
 
       const result = await manager.executeCode(instance.mcp_id, code, 30000)
 
+      if (!result.success) {
+        console.error('Execution failed:', {
+          error: result.error,
+          error_details: result.error_details,
+          output: result.output,
+        })
+      }
+
       expect(result.success).toBe(true)
       expect(result.output).toBeDefined()
       expect(result.output).toContain('Fetch blocked by allowlist')

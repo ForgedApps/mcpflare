@@ -15,6 +15,14 @@ vi.mock('../../src/utils/logger.js', () => ({
     error: vi.fn(),
   },
 }))
+// Mock mcp-registry to prevent cleanupSchemaCache from accessing real config manager
+vi.mock('../../src/utils/mcp-registry.js', async () => {
+  const actual = await vi.importActual('../../src/utils/mcp-registry.js')
+  return {
+    ...actual,
+    cleanupSchemaCache: vi.fn().mockReturnValue({ removed: [] }),
+  }
+})
 
 describe('Prompt Handler', () => {
   let mcpHandler: MCPHandler

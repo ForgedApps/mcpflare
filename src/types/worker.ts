@@ -32,11 +32,16 @@ export interface WorkerCode {
   env?: Record<string, unknown>
   /**
    * Global outbound configuration for network isolation
-   * - "allow": Allow all outbound requests (default)
-   * - "deny": Deny all outbound requests
    * - null: No outbound requests allowed (true network isolation)
+   * - Fetcher binding: Use a Service Binding for controlled outbound access
+   *
+   * Note: When using a fetcher binding, the dynamic worker's globalThis.fetch
+   * will use that binding instead of being blocked. The binding should
+   * implement allowlist enforcement.
+   *
+   * Reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/
    */
-  globalOutbound?: 'allow' | 'deny' | null
+  globalOutbound?: null | unknown // null or fetcher binding
 }
 
 export type ModuleContent =

@@ -12,7 +12,7 @@
     "dev": "tsx src/server/index.ts",
     "cli": "tsx src/cli/index.ts",
     "build": "tsc",
-    "test": "vitest",
+    "test": "vitest run",
     "test:ci": "vitest run --reporter=dot",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",

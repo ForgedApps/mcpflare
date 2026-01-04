@@ -15,6 +15,10 @@ export default defineConfig({
       VITEST: 'true',
       LOG_LEVEL: process.env.LOG_LEVEL || 'silent',
     },
+    // Reduce verbosity - suppress stdout/stderr unless verbose
+    silent: process.env.VERBOSE_TESTS !== 'true',
+    // Suppress console output during tests
+    setupFiles: ['./tests/helpers/suppress-console.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],

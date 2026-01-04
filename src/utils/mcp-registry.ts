@@ -568,7 +568,7 @@ export function saveCachedSchema(entry: MCPSchemaCacheEntry): void {
 export function cleanupSchemaCache(): { removed: string[] } {
   const settings = loadSettings()
   const configManager = getConfigManager()
-  const allMCPs = configManager.getAllConfiguredMCPs()
+  const allMCPs = configManager.getAllConfiguredMCPs() || {}
   const removed: string[] = []
 
   if (settings.mcpSchemaCache) {
