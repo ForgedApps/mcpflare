@@ -1,11 +1,11 @@
 {
   "title": "Documentation",
   "pages": [
-    "---Introduction---",
     "index",
+    "---Getting Started---",
     "installation",
-    "---Guides---",
     "vscode-extension",
+    "---Guides---",
     "cli",
     "mcp-server",
     "---Architecture---",

@@ -5,13 +5,10 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  // Enable static export for GitHub Pages
-  output: 'export',
-  images: {
-    unoptimized: true,
-  },
-  // Trailing slash for static hosting compatibility
-  trailingSlash: true,
+  // Note: For static export (GitHub Pages), uncomment below and disable API search
+  // output: 'export',
+  // images: { unoptimized: true },
+  // trailingSlash: true,
 };
 
 export default withMDX(config);

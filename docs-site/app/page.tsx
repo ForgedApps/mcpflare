@@ -269,8 +269,16 @@ export default function HomePage() {
       </section>
 
       {/* Attack Prevention Section */}
-      <section className="bg-slate-50 py-24 dark:bg-slate-900">
-        <div className="mx-auto max-w-7xl px-6">
+      <section className="relative overflow-hidden bg-slate-50 py-24 dark:bg-slate-900">
+        {/* Subtle hexagon pattern */}
+        <div 
+          className="absolute inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.04]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='56' height='100' viewBox='0 0 56 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66z' fill='none' stroke='%2322c55e' stroke-width='0.8'/%3E%3Cpath d='M28 100L0 84V50L28 34l28 16v34L28 100z' fill='none' stroke='%2322c55e' stroke-width='0.8'/%3E%3C/svg%3E")`,
+            backgroundSize: '42px 75px'
+          }}
+        />
+        <div className="relative mx-auto max-w-7xl px-6">
           <div className="text-center">
             <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
               Protection Against Real Attacks
