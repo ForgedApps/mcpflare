@@ -650,8 +650,18 @@ function writeConfigFile(filePath: string, config: MCPServersConfig): boolean {
 /**
  * Check if an MCP is disabled (in the _mcpguard_disabled section)
  */
-export function isMCPDisabled(mcpName: string): boolean {
-  const configPath = getPrimaryIDEConfigPath()
+/**
+ * Check if an MCP is disabled (guarded) in the IDE config
+ * @param mcpName Name of the MCP to check
+ * @param source Optional source IDE - if provided, checks that IDE's config; otherwise uses primary
+ */
+export function isMCPDisabled(
+  mcpName: string,
+  source?: 'claude' | 'copilot' | 'cursor',
+): boolean {
+  const configPath = source
+    ? getIDEConfigPath(source)
+    : getPrimaryIDEConfigPath()
   if (!configPath) return false
 
   const rawConfig = readRawConfigFile(configPath)

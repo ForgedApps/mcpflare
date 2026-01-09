@@ -536,7 +536,9 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
     mcpName: string,
     source?: 'claude' | 'copilot' | 'cursor',
   ): Promise<void> {
-    this._log(`Delete MCP requested: ${mcpName}${source ? ` from ${source}` : ''}`)
+    this._log(
+      `Delete MCP requested: ${mcpName}${source ? ` from ${source}` : ''}`,
+    )
 
     // Show confirmation dialog
     const confirm = await vscode.window.showWarningMessage(
@@ -818,8 +820,8 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
       const settingsPath = getSettingsPath()
       let settings = loadSettingsWithHydration(settingsPath)
 
-      // Check if guard status changed (compare against IDE config state)
-      const wasGuarded = isMCPDisabled(config.mcpName)
+      // Check if guard status changed (compare against the correct IDE config)
+      const wasGuarded = isMCPDisabled(config.mcpName, source)
       const isNowGuarded = config.isGuarded
       const guardStatusChanged = wasGuarded !== isNowGuarded
 
@@ -833,7 +835,9 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
           // Disable MCP in IDE config (move to _mcpguard_disabled)
           const result = disableMCPInIDE(config.mcpName, source)
           if (result.success) {
-            console.log(`MCP Guard: ${config.mcpName} disabled in IDE config${source ? ` (${source})` : ''}`)
+            console.log(
+              `MCP Guard: ${config.mcpName} disabled in IDE config${source ? ` (${source})` : ''}`,
+            )
           } else {
             console.warn(
               `MCP Guard: Failed to disable ${config.mcpName} in IDE: ${result.message}`,
@@ -847,7 +851,9 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
           // Enable MCP in IDE config (restore from _mcpguard_disabled)
           const result = enableMCPInIDE(config.mcpName, source)
           if (result.success) {
-            console.log(`MCP Guard: ${config.mcpName} enabled in IDE config${source ? ` (${source})` : ''}`)
+            console.log(
+              `MCP Guard: ${config.mcpName} enabled in IDE config${source ? ` (${source})` : ''}`,
+            )
           } else {
             console.warn(
               `MCP Guard: Failed to enable ${config.mcpName} in IDE: ${result.message}`,
@@ -864,15 +870,15 @@ export class MCPGuardWebviewProvider implements vscode.WebviewViewProvider {
         (c) => c.id === config.id || c.mcpName === config.mcpName,
       )
       if (existingIndex >= 0) {
-        // Keep the computed isGuarded from IDE config
+        // Keep the computed isGuarded from the correct IDE config
         settings.mcpConfigs[existingIndex] = {
           ...config,
-          isGuarded: isMCPDisabled(config.mcpName),
+          isGuarded: isMCPDisabled(config.mcpName, source),
         }
       } else {
         settings.mcpConfigs.push({
           ...config,
-          isGuarded: isMCPDisabled(config.mcpName),
+          isGuarded: isMCPDisabled(config.mcpName, source),
         })
       }
 
