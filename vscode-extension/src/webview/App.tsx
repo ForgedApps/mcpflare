@@ -2,7 +2,8 @@
  * Main App component for MCP Guard webview
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
+import type React from 'react';
 import { useSettings, useMCPServers, useNotifications, useTokenSavings, useConnectionTest, postMessage } from './hooks';
 import { Header, MCPCard, EmptyState, Notification, Button, ShieldIcon, ShieldOffIcon, BeakerIcon, TestingTab, TokenSavingsBadge, ConnectionTestModal, AddMCPModal, PlusIcon } from './components';
 import type { MCPSecurityConfig, MCPGuardSettings, MCPConfigInput } from './types';
@@ -86,7 +87,98 @@ export const App: React.FC = () => {
   const unguardedCount = unguardedServers.length;
   
   // Consistent yellow color for unguarded state (matches MCP card styling)
-  const UNGUARDED_YELLOW = '#eab308'; // Muted yellow (less orange)
+  const UNGUARDED_YELLOW = '#eab308'
+
+  // Helper functions to compute styles and avoid nested ternaries
+  function getUnguardedBackground(): string {
+    if (!settings.enabled) {
+      return 'var(--bg-secondary)'
+    }
+    if (unguardedCount > 0) {
+      return 'rgba(234, 179, 8, 0.1)'
+    }
+    return 'var(--bg-secondary)'
+  }
+
+  function getUnguardedBorder(): string {
+    if (!settings.enabled) {
+      return '1px solid var(--border-color)'
+    }
+    if (unguardedCount > 0) {
+      return `1px solid ${UNGUARDED_YELLOW}`
+    }
+    return '1px solid var(--border-color)'
+  }
+
+  function getUnguardedIconColor(): string {
+    if (!settings.enabled) {
+      return 'var(--text-muted)'
+    }
+    if (unguardedCount > 0) {
+      return UNGUARDED_YELLOW
+    }
+    return 'var(--text-secondary)'
+  }
+
+  function getUnguardedTextColor(): string {
+    if (!settings.enabled) {
+      return 'var(--text-muted)'
+    }
+    if (unguardedCount > 0) {
+      return UNGUARDED_YELLOW
+    }
+    return 'var(--text-secondary)'
+  }
+
+  function getUnguardedCountColor(): string {
+    if (!settings.enabled) {
+      return 'var(--text-muted)'
+    }
+    if (unguardedCount > 0) {
+      return UNGUARDED_YELLOW
+    }
+    return 'var(--text-muted)'
+  }
+
+  function getGuardedBackground(): string {
+    if (!settings.enabled) {
+      return 'var(--bg-secondary)'
+    }
+    if (guardedCount > 0) {
+      return 'rgba(34, 197, 94, 0.1)'
+    }
+    return 'var(--bg-secondary)'
+  }
+
+  function getGuardedBorder(): string {
+    if (!settings.enabled) {
+      return '1px solid var(--border-color)'
+    }
+    if (guardedCount > 0) {
+      return '1px solid rgba(34, 197, 94, 0.3)'
+    }
+    return '1px solid var(--border-color)'
+  }
+
+  function getGuardedTextColor(): string {
+    if (!settings.enabled) {
+      return 'var(--text-muted)'
+    }
+    if (guardedCount > 0) {
+      return 'var(--success)'
+    }
+    return 'var(--text-secondary)'
+  }
+
+  function getGuardedCountColor(): string {
+    if (!settings.enabled) {
+      return 'var(--text-muted)'
+    }
+    if (guardedCount > 0) {
+      return 'var(--success)'
+    }
+    return 'var(--text-muted)'
+  }
 
   return (
     <div style={{ padding: '16px', maxWidth: '100%' }}>
@@ -155,26 +247,18 @@ export const App: React.FC = () => {
               flex: 1,
               padding: '16px',
               borderRadius: 'var(--radius-md)',
-              background: !settings.enabled 
-                ? 'var(--bg-secondary)'
-                : unguardedCount > 0 
-                  ? 'rgba(234, 179, 8, 0.1)' 
-                  : 'var(--bg-secondary)',
-              border: !settings.enabled
-                ? '1px solid var(--border-color)'
-                : unguardedCount > 0 
-                  ? `1px solid ${UNGUARDED_YELLOW}` 
-                  : '1px solid var(--border-color)',
+              background: getUnguardedBackground(),
+              border: getUnguardedBorder(),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <div style={{ color: !settings.enabled ? 'var(--text-muted)' : unguardedCount > 0 ? UNGUARDED_YELLOW : 'var(--text-secondary)' }}>
+              <div style={{ color: getUnguardedIconColor() }}>
                 <ShieldOffIcon size={16} className={undefined} />
               </div>
               <span style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: !settings.enabled ? 'var(--text-muted)' : unguardedCount > 0 ? UNGUARDED_YELLOW : 'var(--text-secondary)',
+                color: getUnguardedTextColor(),
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
               }}>
@@ -184,7 +268,7 @@ export const App: React.FC = () => {
                 marginLeft: 'auto',
                 fontSize: '18px', 
                 fontWeight: 700, 
-                color: !settings.enabled ? 'var(--text-muted)' : unguardedCount > 0 ? UNGUARDED_YELLOW : 'var(--text-muted)'
+                color: getUnguardedCountColor()
               }}>
                 {!settings.enabled ? servers.length : unguardedCount}
               </span>
@@ -230,16 +314,8 @@ export const App: React.FC = () => {
               flex: 1,
               padding: '16px',
               borderRadius: 'var(--radius-md)',
-              background: !settings.enabled
-                ? 'var(--bg-secondary)'
-                : guardedCount > 0 
-                  ? 'rgba(34, 197, 94, 0.1)' 
-                  : 'var(--bg-secondary)',
-              border: !settings.enabled
-                ? '1px solid var(--border-color)'
-                : guardedCount > 0 
-                  ? '1px solid rgba(34, 197, 94, 0.3)' 
-                  : '1px solid var(--border-color)',
+              background: getGuardedBackground(),
+              border: getGuardedBorder(),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -247,7 +323,7 @@ export const App: React.FC = () => {
               <span style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: !settings.enabled ? 'var(--text-muted)' : guardedCount > 0 ? 'var(--success)' : 'var(--text-secondary)',
+                color: getGuardedTextColor(),
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
               }}>
@@ -257,9 +333,9 @@ export const App: React.FC = () => {
                 marginLeft: 'auto',
                 fontSize: '18px', 
                 fontWeight: 700, 
-                color: !settings.enabled ? 'var(--text-muted)' : guardedCount > 0 ? 'var(--success)' : 'var(--text-muted)'
+                color: getGuardedCountColor()
               }}>
-                {!settings.enabled ? guardedCount : guardedCount}
+                {guardedCount}
               </span>
             </div>
             {!settings.enabled ? (
@@ -387,13 +463,22 @@ export const App: React.FC = () => {
       <div style={{ marginTop: '32px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
         <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
           MCP Guard v0.1.0 · 
-          <a
-            href="#"
-            onClick={(e) => { e.preventDefault(); postMessage({ type: 'openMCPGuardDocs' }); }}
-            style={{ color: 'var(--accent)', marginLeft: '4px', textDecoration: 'none' }}
+          <button
+            type="button"
+            onClick={() => postMessage({ type: 'openMCPGuardDocs' })}
+            style={{ 
+              color: 'var(--accent)', 
+              marginLeft: '4px', 
+              textDecoration: 'none',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              font: 'inherit',
+              cursor: 'pointer'
+            }}
           >
             Documentation
-          </a>
+          </button>
         </p>
       </div>
         </>

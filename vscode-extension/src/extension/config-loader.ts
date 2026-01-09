@@ -243,256 +243,111 @@ function safeParseJSON(filePath: string): unknown | null {
 }
 
 /**
- * Load MCPs from Claude Code config (including disabled MCPs from _mcpguard_disabled)
- * Claude Code uses ~/.claude/mcp.json or ~/.claude/mcp.jsonc as primary config location
+ * Type for MCP server configuration in IDE config files
+ */
+type MCPServerConfig = {
+  command?: string
+  args?: string[]
+  url?: string
+  headers?: Record<string, string>
+  env?: Record<string, string>
+  disabled?: boolean
+}
+
+/**
+ * Type for IDE config file structure
+ */
+type IDEConfig = {
+  mcpServers?: Record<string, MCPServerConfig>
+  _mcpguard_disabled?: Record<string, Omit<MCPServerConfig, 'disabled'>>
+} | null
+
+/**
+ * Load MCPs from an IDE config file
+ * Supports both active MCPs and disabled MCPs from _mcpguard_disabled section
  * Also supports legacy `disabled: true` property for backwards compatibility
+ */
+function loadIDEConfig(
+  ide: 'claude' | 'copilot' | 'cursor',
+): MCPServerInfo[] {
+  const mcps: MCPServerInfo[] = []
+  const paths = IDE_CONFIG_PATHS[ide]
+
+  for (const configPath of paths) {
+    if (!fileExists(configPath)) {
+      continue
+    }
+
+    const config = safeParseJSON(configPath) as IDEConfig
+    if (!config) {
+      continue
+    }
+
+    if (config.mcpServers) {
+      for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+        if (name === 'mcpguard') {
+          continue
+        }
+
+        mcps.push({
+          name,
+          command: serverConfig.command,
+          args: serverConfig.args,
+          url: serverConfig.url,
+          headers: serverConfig.headers,
+          env: serverConfig.env,
+          source: ide,
+          enabled: !serverConfig.disabled,
+        })
+      }
+    }
+
+    if (config._mcpguard_disabled) {
+      for (const [name, serverConfig] of Object.entries(
+        config._mcpguard_disabled,
+      )) {
+        if (name === 'mcpguard') {
+          continue
+        }
+
+        mcps.push({
+          name,
+          command: serverConfig.command,
+          args: serverConfig.args,
+          url: serverConfig.url,
+          headers: serverConfig.headers,
+          env: serverConfig.env,
+          source: ide,
+          enabled: false,
+        })
+      }
+    }
+
+    break
+  }
+
+  return mcps
+}
+
+/**
+ * Load MCPs from Claude Code config
  */
 function loadClaudeConfig(): MCPServerInfo[] {
-  const mcps: MCPServerInfo[] = []
-
-  for (const configPath of IDE_CONFIG_PATHS.claude) {
-    if (!fileExists(configPath)) continue
-
-    const config = safeParseJSON(configPath) as {
-      mcpServers?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-          disabled?: boolean
-        }
-      >
-      _mcpguard_disabled?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-        }
-      >
-    } | null
-
-    if (!config) continue
-
-    // Load active MCPs (also check legacy disabled property)
-    if (config.mcpServers) {
-      for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'claude',
-          // Support both _mcpguard_disabled section and legacy disabled property
-          enabled: !serverConfig.disabled,
-        })
-      }
-    }
-
-    // Load disabled MCPs (guarded by MCPGuard - new pattern)
-    if (config._mcpguard_disabled) {
-      for (const [name, serverConfig] of Object.entries(
-        config._mcpguard_disabled,
-      )) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'claude',
-          enabled: false, // Disabled MCPs - guarded by MCPGuard
-        })
-      }
-    }
-
-    // Only use first found config
-    break
-  }
-
-  return mcps
+  return loadIDEConfig('claude')
 }
 
 /**
- * Load MCPs from GitHub Copilot config (including disabled MCPs from _mcpguard_disabled)
- * GitHub Copilot uses ~/.github/copilot/mcp.json as primary config location
- * Also supports legacy `disabled: true` property for backwards compatibility
+ * Load MCPs from GitHub Copilot config
  */
 function loadCopilotConfig(): MCPServerInfo[] {
-  const mcps: MCPServerInfo[] = []
-
-  for (const configPath of IDE_CONFIG_PATHS.copilot) {
-    if (!fileExists(configPath)) continue
-
-    const config = safeParseJSON(configPath) as {
-      mcpServers?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-          disabled?: boolean
-        }
-      >
-      _mcpguard_disabled?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-        }
-      >
-    } | null
-
-    if (!config) continue
-
-    // Load active MCPs (also check legacy disabled property)
-    if (config.mcpServers) {
-      for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'copilot',
-          // Support both _mcpguard_disabled section and legacy disabled property
-          enabled: !serverConfig.disabled,
-        })
-      }
-    }
-
-    // Load disabled MCPs (guarded by MCPGuard - new pattern)
-    if (config._mcpguard_disabled) {
-      for (const [name, serverConfig] of Object.entries(
-        config._mcpguard_disabled,
-      )) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'copilot',
-          enabled: false, // Disabled MCPs - guarded by MCPGuard
-        })
-      }
-    }
-
-    break
-  }
-
-  return mcps
+  return loadIDEConfig('copilot')
 }
 
 /**
- * Load MCPs from Cursor config (including disabled MCPs from _mcpguard_disabled)
- * Cursor uses ~/.cursor/mcp.json or ~/.cursor/mcp.jsonc as primary config location
- * Also supports legacy `disabled: true` property for backwards compatibility
+ * Load MCPs from Cursor config
  */
 function loadCursorConfig(): MCPServerInfo[] {
-  const mcps: MCPServerInfo[] = []
-
-  for (const configPath of IDE_CONFIG_PATHS.cursor) {
-    if (!fileExists(configPath)) continue
-
-    const config = safeParseJSON(configPath) as {
-      mcpServers?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-          disabled?: boolean
-        }
-      >
-      _mcpguard_disabled?: Record<
-        string,
-        {
-          command?: string
-          args?: string[]
-          url?: string
-          headers?: Record<string, string>
-          env?: Record<string, string>
-        }
-      >
-    } | null
-
-    if (!config) continue
-
-    // Load active MCPs (also check legacy disabled property)
-    if (config.mcpServers) {
-      for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'cursor',
-          // Support both _mcpguard_disabled section and legacy disabled property
-          enabled: !serverConfig.disabled,
-        })
-      }
-    }
-
-    // Load disabled MCPs (guarded by MCPGuard - new pattern)
-    if (config._mcpguard_disabled) {
-      for (const [name, serverConfig] of Object.entries(
-        config._mcpguard_disabled,
-      )) {
-        // Skip mcpguard itself
-        if (name === 'mcpguard') continue
-
-        mcps.push({
-          name,
-          command: serverConfig.command,
-          args: serverConfig.args,
-          url: serverConfig.url,
-          headers: serverConfig.headers,
-          env: serverConfig.env,
-          source: 'cursor',
-          enabled: false, // Disabled MCPs - guarded by MCPGuard
-        })
-      }
-    }
-
-    break
-  }
-
-  return mcps
+  return loadIDEConfig('cursor')
 }
 
 /**
@@ -892,7 +747,7 @@ export function ensureMCPGuardInConfig(extensionPath: string): {
         message: 'Created IDE config with mcpguard',
         added: true,
       }
-    } catch (error) {
+    } catch {
       return {
         success: false,
         message: 'Failed to create config directory',
