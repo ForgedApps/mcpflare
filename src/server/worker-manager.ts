@@ -1,6 +1,5 @@
 import {
   type ChildProcess,
-  exec,
   type SpawnOptions,
   spawn,
 } from 'node:child_process'
@@ -2531,7 +2530,8 @@ export class WorkerManager {
    * On Unix, uses SIGTERM/SIGKILL with process group
    */
   private async killProcessTree(pid: number): Promise<void> {
-    if (!pid) {
+    // Validate PID is a positive integer to prevent command injection
+    if (!pid || !Number.isInteger(pid) || pid <= 0) {
       return
     }
 
@@ -2539,7 +2539,18 @@ export class WorkerManager {
       if (process.platform === 'win32') {
         // On Windows, use taskkill to kill the process tree
         // /F = force kill, /T = kill child processes, /PID = process ID
-        exec(`taskkill /F /T /PID ${pid}`, () => {
+        // Use spawn with arguments instead of exec with string interpolation to prevent command injection
+        const taskkillProcess = spawn('taskkill', ['/F', '/T', '/PID', String(pid)], {
+          stdio: 'ignore',
+          shell: false,
+        })
+        
+        taskkillProcess.on('exit', () => {
+          // Ignore errors - process might already be dead
+          resolve()
+        })
+        
+        taskkillProcess.on('error', () => {
           // Ignore errors - process might already be dead
           resolve()
         })
