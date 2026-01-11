@@ -70,7 +70,7 @@ MCP Guard implements defense-in-depth security:
 4. **Binding-Based Access** - Explicit, scoped permissions
 5. **Disposable Environments** - No state persistence between executions
 
-For a detailed security analysis, see [SECURITY_ANALYSIS.md](docs/SECURITY_ANALYSIS.md).
+For a detailed security analysis, see the [Security Analysis](https://jgentes.github.io/mcpguard/docs/security) documentation.
 
 ## Security Updates
 

@@ -5,10 +5,11 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  // Note: For static export (GitHub Pages), uncomment below and disable API search
-  // output: 'export',
-  // images: { unoptimized: true },
-  // trailingSlash: true,
+  // Static export for GitHub Pages
+  output: 'export',
+  images: { unoptimized: true },
+  trailingSlash: true,
+  basePath: '/mcpguard',
 };
 
 export default withMDX(config);

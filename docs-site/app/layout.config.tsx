@@ -4,7 +4,7 @@ export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
       <div className="flex items-center gap-2">
-        <img src="/icon.svg" alt="MCP Guard" className="h-6 w-6" />
+        <img src="/mcpguard/icon.svg" alt="MCP Guard" className="h-6 w-6" />
         <span className="font-bold">MCP Guard</span>
       </div>
     ),
@@ -17,11 +17,11 @@ export const baseOptions: BaseLayoutProps = {
     },
     {
       text: 'GitHub',
-      url: 'https://github.com/mcpguard/mcpguard',
+      url: 'https://github.com/jgentes/mcpguard',
       external: true,
     },
   ],
-  githubUrl: 'https://github.com/mcpguard/mcpguard',
+  githubUrl: 'https://github.com/jgentes/mcpguard',
 };
 
 

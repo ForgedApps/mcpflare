@@ -24,7 +24,6 @@
     "check": "biome check src",
     "check:fix": "biome check --write src",
     "worker:dev": "npx wrangler dev",
-    "benchmark": "tsx benchmarks/github-comparison.ts",
     "release": "release-it",
     "publish": "npm publish --provenance --access public"
   },
@@ -68,5 +67,11 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
 }
