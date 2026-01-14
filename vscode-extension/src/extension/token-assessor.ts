@@ -225,9 +225,9 @@ export async function discoverOAuthMetadata(
       return null
     }
 
+    // Don't log full OAuth metadata - may contain sensitive authorization server URLs and scopes
     console.log(
-      `OAuth Discovery: Found OAuth metadata for ${baseUrl}:`,
-      JSON.stringify(metadata, null, 2),
+      `OAuth Discovery: Found OAuth metadata for ${baseUrl} (${metadata.authorization_servers?.length || 0} authorization server(s))`,
     )
 
     return {
@@ -378,12 +378,13 @@ async function assessURLBasedMCP(
         const isOAuthBearer = wwwAuth.toLowerCase().includes('bearer')
         
         console.log(`Token Assessor: ${server.name} checking OAuth requirement...`)
-        // Don't log full WWW-Authenticate header - may contain sensitive auth scheme info
+        // Don't log full WWW-Authenticate header or derived values - may contain sensitive auth scheme info
         console.log(`Token Assessor: WWW-Authenticate header present: ${wwwAuth.length > 0}`)
-        console.log(`Token Assessor: isOAuthBearer: ${isOAuthBearer}`)
+        // Don't log isOAuthBearer - derived from sensitive header data
         
         // Also check well-known endpoint for OAuth metadata
         const oauthMetadata = await discoverOAuthMetadata(server.url)
+        // Don't log OAuth metadata details - may contain sensitive authorization server URLs
         console.log(`Token Assessor: OAuth metadata from well-known: ${oauthMetadata ? 'found' : 'not found'}`)
 
         if (oauthMetadata || isOAuthBearer) {
@@ -1294,17 +1295,19 @@ export async function testMCPConnection(
         const isOAuthBearer = wwwAuth.toLowerCase().includes('bearer')
         
         console.log(`Connection Test: ${server.name} got ${initResponse.status}, checking OAuth...`)
-        // Don't log full WWW-Authenticate header - may contain sensitive auth scheme info
+        // Don't log full WWW-Authenticate header or derived values - may contain sensitive auth scheme info
         console.log(`Connection Test: WWW-Authenticate header present: ${wwwAuth.length > 0}`)
-        console.log(`Connection Test: isOAuthBearer: ${isOAuthBearer}`)
+        // Don't log isOAuthBearer - derived from sensitive header data
         
         // Also check well-known endpoint for OAuth metadata
         const oauthMetadata = await discoverOAuthMetadata(server.url)
+        // Don't log OAuth metadata details - may contain sensitive authorization server URLs
         console.log(`Connection Test: OAuth metadata from well-known: ${oauthMetadata ? 'found' : 'not found'}`)
         
         if (oauthMetadata || isOAuthBearer) {
+          // Don't expose authorization server URLs in step details - sensitive information
           const detectionMethod = oauthMetadata 
-            ? `Authorization servers: ${oauthMetadata.authorization_servers?.join(', ')}`
+            ? `OAuth required (${oauthMetadata.authorization_servers?.length || 0} authorization server(s) configured)`
             : `Detected via WWW-Authenticate: Bearer header`
           
           steps.push({
