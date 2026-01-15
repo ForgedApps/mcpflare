@@ -208,17 +208,27 @@ describe('Security: MCP Isolation', () => {
       // Note: WorkerManager.executeCode doesn't validate (validation happens in MCP handler)
       // This test verifies runtime isolation - even if validation is bypassed, runtime blocks it
       const code = `
-        // Try direct filesystem access (this should fail at runtime)
-        try {
-          const fs = require('fs');
-          const content = fs.readFileSync('package.json', 'utf8');
-          console.log('Direct filesystem access succeeded - SECURITY BREACH!');
-        } catch (error) {
-          console.log('Direct filesystem access blocked at runtime:', error.message);
-        }
+        await (async () => {
+          // Try direct filesystem access (this should fail at runtime)
+          try {
+            const fs = require('fs');
+            const content = fs.readFileSync('package.json', 'utf8');
+            console.log('Direct filesystem access succeeded - SECURITY BREACH!');
+          } catch (error) {
+            console.log('Direct filesystem access blocked at runtime:', error.message || String(error));
+          }
+        })();
       `;
 
       const result = await manager.executeCode(instance.mcp_id, code, 30000);
+
+      if (!result.success) {
+        console.error('Execution failed:', {
+          error: result.error,
+          error_details: result.error_details,
+          output: result.output,
+        })
+      }
       
       // Verify that filesystem access was blocked at runtime
       // Worker isolates don't have Node.js require() or fs module
