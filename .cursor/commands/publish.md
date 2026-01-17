@@ -1,4 +1,4 @@
-## name: release
+## name: publish
 
 Create a new release by analyzing commits, determining version bump, generating changelog, and publishing.
 
@@ -59,4 +59,4 @@ Create a new release by analyzing commits, determining version bump, generating 
 ### Notes:
 - The pre-push hook will run tests before pushing
 - CI will automatically publish to npm when it sees the version tag
-- If tests fail, fix them and run `/release` again
+- If tests fail, fix them and run `/publish` again
