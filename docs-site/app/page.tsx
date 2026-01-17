@@ -10,7 +10,7 @@ export default function HomePage() {
         
         <nav className="relative mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3">
-            <img src="/mcpflare/icon.svg" alt="MCPflare" className="h-10 w-10" />
+            <img src="/icon.svg" alt="MCPflare" className="h-10 w-10" />
             <span className="text-xl font-bold text-slate-900 dark:text-white">
               MCPflare
             </span>
@@ -369,7 +369,7 @@ Result: ✅ Network access blocked`}</code>
         <div className="mx-auto max-w-7xl px-6">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <div className="flex items-center gap-3">
-              <img src="/mcpflare/icon.svg" alt="MCPflare" className="h-8 w-8" />
+              <img src="/icon.svg" alt="MCPflare" className="h-8 w-8" />
               <span className="text-lg font-semibold text-white">MCPflare</span>
             </div>
             <p className="text-sm text-slate-400">

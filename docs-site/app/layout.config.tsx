@@ -4,7 +4,7 @@ export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
       <div className="flex items-center gap-2">
-        <img src="/mcpflare/icon.svg" alt="MCPflare" className="h-6 w-6" />
+        <img src="/icon.svg" alt="MCPflare" className="h-6 w-6" />
         <span className="font-bold">MCPflare</span>
       </div>
     ),
