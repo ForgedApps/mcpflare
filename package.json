@@ -46,7 +46,7 @@
   "bugs": {
     "url": "https://github.com/jgentes/mcpflare/issues"
   },
-  "homepage": "https://github.com/jgentes/mcpflare#readme",
+  "homepage": "https://mcpflare.org",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
     "dotenv": "^16.3.1",
