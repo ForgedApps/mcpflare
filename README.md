@@ -10,32 +10,7 @@
 
 ## 🛡️ How It Works: A Simple Example
 
-```mermaid
-flowchart LR
-    User["👤 User"] -->|"&nbsp;&nbsp;Prompt&nbsp;&nbsp;"| LLM["🤖 LLM"]
-
-    LLM -->|"&nbsp;&nbsp;⚠️ <b>Without MCPflare&nbsp;&nbsp;"| WithoutGuard
-    LLM -->|"&nbsp;&nbsp;✅ <b>With MCPflare&nbsp;&nbsp;"| WithGuard
-
-    subgraph WithoutGuard["<p style='height:6px; width: 600px;'></p>⚠️ No Code Isolation - LLM invokes MCP tools directly"]
-        direction LR
-        WithoutGuardWarning["MCP Can Access:<br/>⚠️ Filesystem<br/>⚠️ Env Variables<br/>⚠️ Network<br/>⚠️ System"]
-        WithoutGuardWarning -->|"&nbsp;&nbsp;Direct Execution&nbsp;&nbsp;"| TargetMCPServer["MCP Tools"]
-    end
-
-    subgraph WithGuard["<p style='height:6px; width: 600px;'></p>✅ Worker Isolates Code - LLM generates code to interface with MCP tools"]
-        direction LR
-        WithGuardBenefits["MCP Blocked From:<br/>✅ Filesystem<br/>✅ Env Variables<br/>✅ Network<br/>✅ System"]
-        WithGuardBenefits -.->|"Indirect<br/>&nbsp;&nbsp;Service Binding&nbsp;&nbsp;"| MCP["MCP Tools"] 
-    end
-
-
-    style WithoutGuardWarning text-align:left
-    style WithGuardBenefits text-align:left
-    style WithoutGuard stroke:#dd0000,stroke-width:4px
-    style WithGuard stroke:#00aa00,stroke-width:4px
-    style MCP stroke:#888888,stroke-width:2px
-```
+![MCPflare Flowchart Overview](@assets/flowchart.png)
 
 ### Real Attack Example
 
@@ -142,11 +117,11 @@ console.log(`Sprint Summary: ${stats.completed}/${stats.total} completed, ${stat
    - 🔒 **Security**: Ensures all tool calls route through MCPflare's secure isolation instead of being called directly.
    
    **How to disable:**
-   - **Option 1**: Ask your LLM: "Disable all MCPs except mcpflare in my IDE configuration"
-   - **Option 2**: Manually comment out or remove other MCP entries in your IDE's MCP config file:
-     - **Claude Code**: `~/.claude/mcp.jsonc` (or `%APPDATA%\Claude Code\User\globalStorage\mcp.jsonc` on Windows)
-     - **GitHub Copilot**: `~/.github/copilot/mcp.jsonc` (or `%APPDATA%\Code\User\globalStorage\github.copilot\mcp.jsonc` on Windows)
-     - **Cursor**: `~/.cursor/mcp.jsonc` (or `%APPDATA%\Cursor\User\globalStorage\mcp.jsonc` on Windows)
+   Ask your LLM: "Disable all MCPs except mcpflare in my IDE configuration"
+   
+   This uses MCPflare's `guard` tool to move MCPs to a special `_mcpflare_disabled` section in your config file. MCPflare can still discover and use these disabled MCPs through its secure isolation layer.
+   
+   > ⚠️ **Important**: Do NOT manually comment out or remove MCP entries from your config file. If you do, MCPflare won't be able to discover them. MCPflare needs the MCP configurations to remain in the file (either active or in the `_mcpflare_disabled` section) to route tool calls through secure isolation.
 
 3. **Restart your IDE** for changes to take effect.
 
@@ -384,6 +359,12 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 - [Anthropic](https://www.anthropic.com/) for the Model Context Protocol
 - [Cloudflare](https://www.cloudflare.com/) for Workers and the Worker Loader API
 - The MCP community for building amazing MCP servers
+
+## 🔐 Repository Security (GitHub Advanced Security)
+
+We take security seriously. This repository has GitHub Advanced Security features enabled, including **CodeQL code scanning**, **Dependabot alerts**, **dependency graph/submission**, and **secret scanning + push protection**. We also enable **private vulnerability reporting** so issues can be disclosed responsibly.
+
+If you believe you’ve found a security issue, please see [`SECURITY.md`](./SECURITY.md) for reporting instructions.
 
 ---
 

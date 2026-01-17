@@ -95,8 +95,13 @@ To maximize efficiency and security, disable any existing MCPs in your IDE confi
 - 🔒 **Security**: Ensures all tool calls route through MCPflare's secure isolation instead of being called directly.
 
 **How to disable:**
-- **Option 1**: Ask your LLM: "Disable all MCPs except mcpflare in my IDE configuration"
-- **Option 2**: Manually comment out or remove other MCP entries in your IDE's MCP config file
+Ask your LLM: "Disable all MCPs except mcpflare in my IDE configuration"
+
+This uses MCPflare's `guard` tool to move MCPs to a special `_mcpflare_disabled` section in your config file. MCPflare can still discover and use these disabled MCPs through its secure isolation layer.
+
+<Callout type="warning" title="Don't Remove MCP Entries">
+  Do NOT manually comment out or remove MCP entries from your config file. If you do, MCPflare won't be able to discover them. MCPflare needs the MCP configurations to remain in the file (either active or in the `_mcpflare_disabled` section) to route tool calls through secure isolation.
+</Callout>
 
 ### Restart Your IDE
 

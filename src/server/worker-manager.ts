@@ -2570,6 +2570,7 @@ export class WorkerManager {
         // /F = force kill, /T = kill child processes (by parent-child relationship)
         // /PID = process ID
         // This works regardless of process groups - it traverses the process tree
+        // Use spawn with arguments instead of exec with string interpolation to prevent command injection
         const taskkillProcess = spawn(
           'taskkill',
           ['/F', '/T', '/PID', String(pid)],

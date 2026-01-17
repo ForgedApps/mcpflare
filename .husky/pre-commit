@@ -1,0 +1,2 @@
+# Lint/format check before committing (matches CI "npm run check")
+npm run check
