@@ -11,7 +11,8 @@
     "draft": false
   },
   "npm": {
-    "publish": true
+    "publish": true,
+    "publishArgs": ["--provenance", "--access", "public"]
   },
   "hooks": {
     "before:init": ["npm run lint", "npm run test", "npm run build"]
