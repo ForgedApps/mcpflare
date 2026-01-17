@@ -4,7 +4,8 @@
  * Syncs the VSCode extension version with the main package.json version
  * This ensures both packages always have the same version number
  *
- * Called by npm's postversion hook - git staging is handled there
+ * Called by npm's version hook (runs after version bump, before git commit/tag)
+ * The version hook stages this file so npm includes it in the version commit
  */
 
 import { readFileSync, writeFileSync } from 'fs'

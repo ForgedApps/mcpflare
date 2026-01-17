@@ -24,7 +24,7 @@
     "check": "biome check src",
     "check:fix": "biome check --write src",
     "worker:dev": "npx wrangler dev",
-    "postversion": "node scripts/sync-vscode-extension-version.js && git add vscode-extension/package.json && git commit --amend --no-edit",
+    "version": "node scripts/sync-vscode-extension-version.js && git add vscode-extension/package.json",
     "prepare": "husky"
   },
   "keywords": [

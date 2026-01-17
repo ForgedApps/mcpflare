@@ -43,8 +43,9 @@ Create a new release by analyzing commits, determining version bump, generating 
    ```
    This automatically:
    - Updates package.json version
-   - Runs postversion hook (syncs VSCode extension version)
-   - Creates a git commit and tag
+   - Runs version hook (syncs VSCode extension version and stages it)
+   - Creates a git commit with both package.json files
+   - Creates a git tag pointing to that commit
 
 6. **Push to trigger CI publish:**
    ```bash
