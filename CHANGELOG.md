@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-17
+
+### Changed
+- Replaced release-it with a simple tag-triggered publish workflow
+- Added `/publish` command for AI-assisted releases with automatic changelog generation
+- Simplified CI workflow - version bumping now happens locally, CI only publishes
+
+### Fixed
+- Fixed npm version hook to ensure git tag includes VSCode extension version sync
+- Fixed pre-push hook line endings for Linux CI compatibility
+- Fixed recursive npm publish issue that caused duplicate publish attempts
+- Fixed release workflow to work with GitHub branch protection rules
+
+## [1.1.0] - 2026-01-17
+
+### Added
+- Enterprise security hardening and automated release process
+- Install command and MCP discovery/transparency features
+- Unrestricted network mode with UI warning
+- VS Code extension for MCP Guard configuration
+- Token savings analysis and disk-based metrics persistence
+- Per-MCP network allowlists enforcement
+- Connection diagnostics and Streamable HTTP session handling
+- Context window usage visualization panel
+
+### Fixed
+- Improved MCP assessment and context usage display
+- Improved URL-based MCP caching and connection handling
+- Prevented command injection in killProcessTree function
+- Resolved various CI and test failures
+
+## [1.0.0] - 2026-01-17
+
+### Changed
+- Renamed product from mcpguard to mcpflare
+- Updated homepage URL to https://mcpflare.org
+
 ## [0.2.0] - 2024-12-13
 
 ### Added
