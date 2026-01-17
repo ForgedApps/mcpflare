@@ -1,4 +1,4 @@
-import { spawn, } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, } from 'node:http';
@@ -138,7 +138,6 @@ export class WorkerManager {
                 res.end(JSON.stringify({
                     success: false,
                     error: errorMessage,
-                    // Don't expose stack traces in API responses - security risk
                 }));
             }
         });
@@ -720,12 +719,10 @@ export class WorkerManager {
                 if (process.platform === 'win32') {
                     spawnOptions.shell = true;
                 }
-                // Log spawn options without sensitive environment variables
                 const safeSpawnOptions = {
                     ...spawnOptions,
                     env: spawnOptions.env
                         ? Object.keys(spawnOptions.env).reduce((acc, key) => {
-                            // Only log non-sensitive env var names, not values
                             acc[key] = '[REDACTED]';
                             return acc;
                         }, {})
@@ -953,15 +950,13 @@ export class WorkerManager {
         logger.debug({ mcpId, toolCount: tools.length, toolNames: tools.map((t) => t.name) }, 'Generating MCP binding stubs');
         const mcpBindingStubs = tools
             .map((tool) => {
-            // Escape tool name for use in template string - escape all special characters
-            // Escape backslashes first, then quotes, then other control characters
             const escapedToolName = tool.name
-                .replace(/\\/g, '\\\\') // Escape backslashes
-                .replace(/'/g, "\\'") // Escape single quotes
-                .replace(/"/g, '\\"') // Escape double quotes
-                .replace(/\n/g, '\\n') // Escape newlines
-                .replace(/\r/g, '\\r') // Escape carriage returns
-                .replace(/\t/g, '\\t'); // Escape tabs
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
             return `    ${tool.name}: async (input) => {
       // Call MCP tool via Service Binding (no fetch() needed - native RPC)
       // The Service Binding is provided by the parent Worker and bridges to Node.js RPC server
@@ -1262,14 +1257,11 @@ export class WorkerManager {
                 '--port',
                 port.toString(),
             ];
-            // Use detached: true on Unix so we can kill the entire process group (including workerd)
             wranglerProcess = spawn(npxCmd, wranglerArgs, {
                 cwd: wranglerCwd,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 shell: isWindows,
-                // detached creates a new process group, allowing process.kill(-pid) to kill all children
-                // This is essential because Wrangler spawns workerd as a child process
-                detached: !isWindows, // Only on Unix - Windows handles this differently with taskkill /T
+                detached: !isWindows,
             });
             let spawnError = null;
             let errorHandled = false;
@@ -1564,14 +1556,11 @@ export class WorkerManager {
             });
         }
         finally {
-            // CRITICAL: Always clean up Wrangler process, regardless of success or failure
-            // This ensures workerd processes don't get orphaned
             if (wranglerProcess) {
                 try {
                     await this.killWranglerProcess(wranglerProcess);
                 }
                 catch (cleanupError) {
-                    // Log but don't throw - cleanup errors shouldn't mask the original error
                     logger.warn({ error: cleanupError, pid: wranglerProcess.pid }, 'Error during Wrangler process cleanup');
                 }
                 wranglerProcess = null;
@@ -1579,15 +1568,11 @@ export class WorkerManager {
         }
     }
     async killProcessTree(pid) {
-        // Validate PID is a positive integer to prevent command injection
         if (!pid || !Number.isInteger(pid) || pid <= 0) {
             return;
         }
         return new Promise((resolve) => {
             if (process.platform === 'win32') {
-                // On Windows, use taskkill to kill the process tree
-                // /F = force kill, /T = kill child processes (by parent-child relationship)
-                // This works regardless of process groups - it traverses the process tree
                 const taskkillProcess = spawn('taskkill', ['/F', '/T', '/PID', String(pid)], {
                     stdio: 'ignore',
                     shell: false,
@@ -1600,39 +1585,26 @@ export class WorkerManager {
                 });
             }
             else {
-                // On Unix (macOS/Linux), use multiple strategies to ensure all children are killed
                 const killWithSignal = (signal) => {
-                    // Try process group kill first (negative PID targets the process group)
                     try {
                         process.kill(-pid, signal);
                     }
                     catch {
-                        // Process group might not exist or process already dead
                     }
-                    // Fallback: Use pkill to kill children by parent PID
-                    // This works even if child processes changed their process group
                     try {
-                        const pkillProcess = spawn('pkill', ['-' + signal, '-P', String(pid)], {
-                            stdio: 'ignore',
-                        });
+                        const pkillProcess = spawn('pkill', [`-${signal}`, '-P', String(pid)], { stdio: 'ignore' });
                         pkillProcess.on('error', () => {
-                            // pkill might not be available on all systems, ignore
                         });
                     }
                     catch {
-                        // Ignore errors
                     }
-                    // Also try to kill the main process directly
                     try {
                         process.kill(pid, signal);
                     }
                     catch {
-                        // Process might already be dead
                     }
                 };
-                // Send SIGTERM first (graceful shutdown)
                 killWithSignal('SIGTERM');
-                // After 1 second, send SIGKILL (force kill) if still running
                 setTimeout(() => {
                     killWithSignal('SIGKILL');
                     resolve();

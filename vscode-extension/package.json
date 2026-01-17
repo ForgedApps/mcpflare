@@ -94,6 +94,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@vscode/vsce": "^3.2.0",
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.0",

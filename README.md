@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/forgedapps.mcpflare)](https://marketplace.visualstudio.com/items?itemName=forgedapps.mcpflare)
 
 ## 🛡️ How It Works: A Simple Example
 

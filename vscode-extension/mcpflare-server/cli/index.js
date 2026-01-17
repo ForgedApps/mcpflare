@@ -899,10 +899,12 @@ async function checkIDEConflicts() {
         }
     });
     if (hasConflicts) {
-        console.log('💡 Tip: To disable an MCP in your IDE:');
-        console.log(`   1. Open your ${sourceName} MCP configuration file`);
-        console.log(`   2. Comment out or remove the "${conflicts.find((c) => c.inIDE && c.inIsolate)?.name}" entry`);
-        console.log(`   3. Restart your IDE\n`);
+        const conflictName = conflicts.find((c) => c.inIDE && c.inIsolate)?.name;
+        console.log('💡 Tip: To disable an MCP in your IDE, use the "guard" command:');
+        console.log(`   guard ${conflictName}`);
+        console.log('');
+        console.log(`   This moves the MCP to a disabled section while keeping it discoverable by MCPflare.`);
+        console.log(`   ⚠️  Do NOT manually remove or comment out MCP entries - MCPflare won't be able to find them.\n`);
     }
 }
 async function deleteSavedConfig() {
