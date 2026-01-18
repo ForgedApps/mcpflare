@@ -51,7 +51,13 @@ Create a new release by analyzing commits, determining version bump, generating 
    ```
    Only include sections that have entries. Write human-readable summaries, not just commit messages.
 
-5. **Update CHANGELOG.md:**
+5. **Sync VS Code extension lock file:**
+   ```bash
+   cd vscode-extension && npm install && cd ..
+   git add vscode-extension/package-lock.json
+   ```
+
+6. **Update CHANGELOG.md:**
    - Prepend the new entry after the title/header
    - Keep existing entries
    - **IMPORTANT:** Commit the changelog BEFORE running npm version:
@@ -59,7 +65,7 @@ Create a new release by analyzing commits, determining version bump, generating 
      git add CHANGELOG.md && git commit -m "docs: update changelog for vX.Y.Z"
      ```
 
-6. **Bump version:**
+7. **Bump version:**
    ```bash
    npm version [major|minor|patch] -m "chore: release v%s"
    ```
@@ -69,7 +75,7 @@ Create a new release by analyzing commits, determining version bump, generating 
    - Creates a git commit with both package.json files
    - Creates a git tag pointing to that commit
 
-7. **Push to trigger CI publish:**
+8. **Push to trigger CI publish:**
    ```bash
    git push && git push --tags
    ```
@@ -80,7 +86,7 @@ Create a new release by analyzing commits, determining version bump, generating 
    ```
    This deletes the old remote tag and pushes the new one.
 
-8. **Report to user:**
+9. **Report to user:**
    - What version was released (e.g., "1.1.0 → 1.1.1")
    - Summary of changes included
    - Link to GitHub Actions: https://github.com/jgentes/mcpflare/actions

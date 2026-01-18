@@ -11,6 +11,15 @@ if [ "$MAIN_VERSION" != "$VSCODE_VERSION" ]; then
 fi
 echo "✅ VSCode extension version in sync: $MAIN_VERSION"
 
+# Verify vscode-extension lock file is in sync
+echo "Verifying vscode-extension lock file..."
+(cd vscode-extension && npm ci --dry-run) 2>/dev/null || {
+  echo "❌ ERROR: vscode-extension/package-lock.json out of sync!"
+  echo "   Run: cd vscode-extension && npm install"
+  exit 1
+}
+echo "✅ VSCode extension lock file in sync"
+
 # Lint/format check before pushing (matches CI "npm run check")
 # Note: biome check includes both lint and format checks
 npm run check
