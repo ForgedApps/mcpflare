@@ -10,6 +10,9 @@ Secure your local MCP servers with zero-trust isolation while reducing context w
 2.  Your MCP servers are **auto-discovered** from Claude, Cursor, and Copilot.
 3.  **Toggle protection** on for any MCP you want to secure.
 
+*Screenshot: MCPflare VS Code Extension*
+![MCPflare VS Code Extension](../assets/vscode_extension.png)
+
 > **Tip:** Open the settings panel anytime with `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS) → **MCPflare: Open Settings**.
 
 ## How It Works: Defense in Depth
