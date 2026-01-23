@@ -45,7 +45,7 @@ MCPflare runs all code in local Cloudflare Worker isolates with **zero access** 
 2. **Network Isolation** - No outbound network access, only MCP bindings can communicate
 3. **Code Validation** - Blocks dangerous patterns before execution
 
-📖 **[Read the security analysis](https://jgentes.github.io/mcpflare/docs/security)** for attack vector details and defense-in-depth architecture.
+📖 **[Read the security analysis](https://mcpflare.org/docs/security)** for attack vector details and defense-in-depth architecture.
 
 ## ⚡ Efficiency: Code Mode Execution
 

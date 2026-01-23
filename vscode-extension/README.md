@@ -1,6 +1,6 @@
 # MCPflare - Zero-Trust MCP Security
 
-[**Documentation**](https://mcpflare.org/) | [**GitHub**](https://github.com/jgentes/mcpflare) | [**VS Code Extension**](https://marketplace.visualstudio.com/items?itemName=forgedapps.mcpflare)
+[**Documentation**](https://mcpflare.org/) | [**GitHub**](https://github.com/forgedapps/mcpflare) | [**VS Code Extension**](https://marketplace.visualstudio.com/items?itemName=forgedapps.mcpflare)
 
 Secure your local MCP servers with zero-trust isolation while reducing context window token usage by up to **98%**. Protect against data exfiltration, credential theft, and more.
 
@@ -12,7 +12,7 @@ Secure your local MCP servers with zero-trust isolation while reducing context w
 
 *Screenshot: MCPflare VS Code Extension*
 
-![MCPflare VS Code Extension](https://raw.githubusercontent.com/jgentes/mcpflare/main/vscode-extension/media/vscode_extension.png)
+![MCPflare VS Code Extension](https://raw.githubusercontent.com/forgedapps/mcpflare/main/vscode-extension/media/vscode_extension.png)
 
 > **Tip:** Open the settings panel anytime with `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS) → **MCPflare: Open Settings**.
 
@@ -57,4 +57,4 @@ Easily toggle isolation on or off for any individual MCP server.
 - **Token Savings**: Real-time visualization of context window savings and performance metrics.
 
 ---
-[Documentation](https://mcpflare.org/) | [Report Issues](https://github.com/jgentes/mcpflare/issues) | [Changelog](https://github.com/jgentes/mcpflare/blob/main/CHANGELOG.md)
+[Documentation](https://mcpflare.org/) | [Report Issues](https://github.com/forgedapps/mcpflare/issues) | [Changelog](https://github.com/forgedapps/mcpflare/blob/main/CHANGELOG.md)

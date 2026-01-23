@@ -18,7 +18,7 @@ We take the security of MCPflare seriously. If you discover a security vulnerabi
 Instead, please report them via one of the following methods:
 
 1. **GitHub Private Vulnerability Reporting** (Preferred)
-   - Go to the [Security tab](https://github.com/jgentes/mcpflare/security) of this repository
+   - Go to the [Security tab](https://github.com/forgedapps/mcpflare/security) of this repository
    - Click "Report a vulnerability"
    - Fill out the form with details about the vulnerability
 
@@ -70,7 +70,7 @@ MCPflare implements defense-in-depth security:
 4. **Binding-Based Access** - Explicit, scoped permissions
 5. **Disposable Environments** - No state persistence between executions
 
-For a detailed security analysis, see the [Security Analysis](https://jgentes.github.io/mcpflare/docs/security) documentation.
+For a detailed security analysis, see the [Security Analysis](https://mcpflare.org/docs/security) documentation.
 
 ## Security Updates
 

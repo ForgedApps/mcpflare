@@ -17,11 +17,11 @@ export const baseOptions: BaseLayoutProps = {
     },
     {
       text: 'GitHub',
-      url: 'https://github.com/jgentes/mcpflare',
+      url: 'https://github.com/forgedapps/mcpflare',
       external: true,
     },
   ],
-  githubUrl: 'https://github.com/jgentes/mcpflare',
+  githubUrl: 'https://github.com/forgedapps/mcpflare',
 };
 
 

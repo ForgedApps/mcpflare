@@ -23,7 +23,7 @@ export default function HomePage() {
               Documentation
             </Link>
             <a
-              href="https://github.com/jgentes/mcpflare"
+              href="https://github.com/forgedapps/mcpflare"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
@@ -373,7 +373,7 @@ Result: ✅ Network access blocked`}</code>
               <span className="text-lg font-semibold text-white">MCPflare</span>
             </div>
             <p className="text-sm text-slate-400">
-              MIT License © {new Date().getFullYear()} James Gentes
+              MIT License © {new Date().getFullYear()} Forged Apps
             </p>
           </div>
         </div>

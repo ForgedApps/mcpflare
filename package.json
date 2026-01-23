@@ -36,14 +36,14 @@
     "sandbox",
     "model-context-protocol"
   ],
-  "author": "James Gentes",
+  "author": "Forged Apps",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jgentes/mcpflare.git"
+    "url": "https://github.com/forgedapps/mcpflare.git"
   },
   "bugs": {
-    "url": "https://github.com/jgentes/mcpflare/issues"
+    "url": "https://github.com/forgedapps/mcpflare/issues"
   },
   "homepage": "https://mcpflare.org",
   "dependencies": {

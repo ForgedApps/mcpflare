@@ -7,18 +7,18 @@
   "license": "MIT",
   "author": {
     "name": "Forged Apps",
-    "email": "jgentes@gmail.com"
+    "email": "support@forgedapps.com"
   },
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jgentes/mcpflare.git",
+    "url": "https://github.com/forgedapps/mcpflare.git",
     "directory": "vscode-extension"
   },
   "bugs": {
-    "url": "https://github.com/jgentes/mcpflare/issues"
+    "url": "https://github.com/forgedapps/mcpflare/issues"
   },
-  "homepage": "https://github.com/jgentes/mcpflare/tree/main/vscode-extension#readme",
+  "homepage": "https://github.com/forgedapps/mcpflare/tree/main/vscode-extension#readme",
   "keywords": [
     "mcp",
     "model-context-protocol",
