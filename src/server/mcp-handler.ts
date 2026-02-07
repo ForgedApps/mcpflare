@@ -65,10 +65,7 @@ export class MCPHandler {
     namespacedName: string,
   ): { mcpName: string; toolName: string } | null {
     const parts = namespacedName.split('::')
-    if (parts.length === 2) {
-      return { mcpName: parts[0], toolName: parts[1] }
-    }
-    return null
+    return parts.length === 2 ? { mcpName: parts[0], toolName: parts[1] } : null
   }
 
   /**
@@ -86,20 +83,14 @@ export class MCPHandler {
     >
   > {
     const allMCPs = this.configManager.getAllConfiguredMCPs()
-    const mcpMap = new Map<
+    return new Map<
       string,
       {
         config: MCPConfig
         source: 'cursor' | 'claude-code' | 'github-copilot'
         status: 'active' | 'disabled'
       }
-    >()
-
-    for (const [name, entry] of Object.entries(allMCPs)) {
-      mcpMap.set(name, entry)
-    }
-
-    return mcpMap
+    >(Object.entries(allMCPs))
   }
 
   /**
@@ -653,15 +644,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
 
         if (error instanceof MCPIsolateError) {
           // Check if this is a fatal error (should stop execution)
-          const isFatal: boolean =
-            error.code === 'UNSUPPORTED_CONFIG' ||
-            error.code === 'MCP_CONNECTION_ERROR' ||
-            Boolean(
-              error.details &&
-                typeof error.details === 'object' &&
-                'fatal' in error.details &&
-                (error.details as { fatal?: boolean }).fatal === true,
-            )
+          const isFatal = this.isFatalMCPIsolateError(error)
 
           return {
             content: [
@@ -916,15 +899,7 @@ The code runs in an isolated Worker environment with no network access. All MCP 
         logger.error({ error, prompt: name }, 'Prompt request failed')
 
         if (error instanceof MCPIsolateError) {
-          const isFatal: boolean =
-            error.code === 'UNSUPPORTED_CONFIG' ||
-            error.code === 'MCP_CONNECTION_ERROR' ||
-            Boolean(
-              error.details &&
-                typeof error.details === 'object' &&
-                'fatal' in error.details &&
-                (error.details as { fatal?: boolean }).fatal === true,
-            )
+          const isFatal = this.isFatalMCPIsolateError(error)
 
           return {
             content: [
@@ -1263,28 +1238,12 @@ The code runs in an isolated Worker environment with no network access. All MCP 
       // Check if this is a fatal error (e.g., MCP connection error, Wrangler execution failure)
       const errorMessage = result.error || ''
       const errorDetails = result.error_details
-      const hasWranglerError: boolean =
-        errorMessage.includes('Wrangler execution failed') ||
-        errorMessage.includes('Wrangler process') ||
-        errorMessage.includes('Wrangler dev server') ||
-        Boolean(
-          errorDetails &&
-            typeof errorDetails === 'object' &&
-            ('wrangler_stderr' in errorDetails ||
-              'wrangler_stdout' in errorDetails),
-        )
-
-      const isFatal: boolean =
-        errorMessage.includes('MCP_CONNECTION_ERROR') ||
-        errorMessage.includes('URL-based MCP') ||
-        errorMessage.includes('cannot be loaded') ||
-        hasWranglerError ||
-        Boolean(
-          errorDetails &&
-            typeof errorDetails === 'object' &&
-            'fatal' in errorDetails &&
-            (errorDetails as { fatal?: boolean }).fatal === true,
-        )
+      const hasWranglerError = this.hasWranglerError(errorMessage, errorDetails)
+      const isFatal = this.isFatalExecutionError(
+        errorMessage,
+        errorDetails,
+        hasWranglerError,
+      )
 
       // Extract Wrangler error details for prominent display
       let wranglerError: {
@@ -1403,6 +1362,42 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     return lines.join('\n').trim()
   }
 
+  private hasWranglerError(
+    errorMessage: string,
+    errorDetails: unknown,
+  ): boolean {
+    return (
+      errorMessage.includes('Wrangler execution failed') ||
+      errorMessage.includes('Wrangler process') ||
+      errorMessage.includes('Wrangler dev server') ||
+      Boolean(
+        errorDetails &&
+          typeof errorDetails === 'object' &&
+          ('wrangler_stderr' in errorDetails ||
+            'wrangler_stdout' in errorDetails),
+      )
+    )
+  }
+
+  private isFatalExecutionError(
+    errorMessage: string,
+    errorDetails: unknown,
+    hasWranglerError: boolean,
+  ): boolean {
+    return (
+      errorMessage.includes('MCP_CONNECTION_ERROR') ||
+      errorMessage.includes('URL-based MCP') ||
+      errorMessage.includes('cannot be loaded') ||
+      hasWranglerError ||
+      Boolean(
+        errorDetails &&
+          typeof errorDetails === 'object' &&
+          'fatal' in errorDetails &&
+          (errorDetails as { fatal?: boolean }).fatal === true,
+      )
+    )
+  }
+
   private filterWranglerOutput(output: string): string[] {
     const lines = output.split('\n')
     const filtered: string[] = []
@@ -1474,6 +1469,19 @@ The code runs in an isolated Worker environment with no network access. All MCP 
     }
 
     return filtered
+  }
+
+  private isFatalMCPIsolateError(error: MCPIsolateError): boolean {
+    return (
+      error.code === 'UNSUPPORTED_CONFIG' ||
+      error.code === 'MCP_CONNECTION_ERROR' ||
+      Boolean(
+        error.details &&
+          typeof error.details === 'object' &&
+          'fatal' in error.details &&
+          (error.details as { fatal?: boolean }).fatal === true,
+      )
+    )
   }
 
   private getExecutionErrorSuggestion(error?: string): string {
@@ -2101,28 +2109,12 @@ return result;`
       // Check if this is a fatal error (e.g., MCP connection error, Wrangler execution failure)
       const errorMessage = result.error || ''
       const errorDetails = result.error_details
-      const hasWranglerError: boolean =
-        errorMessage.includes('Wrangler execution failed') ||
-        errorMessage.includes('Wrangler process') ||
-        errorMessage.includes('Wrangler dev server') ||
-        Boolean(
-          errorDetails &&
-            typeof errorDetails === 'object' &&
-            ('wrangler_stderr' in errorDetails ||
-              'wrangler_stdout' in errorDetails),
-        )
-
-      const isFatal: boolean =
-        errorMessage.includes('MCP_CONNECTION_ERROR') ||
-        errorMessage.includes('URL-based MCP') ||
-        errorMessage.includes('cannot be loaded') ||
-        hasWranglerError ||
-        Boolean(
-          errorDetails &&
-            typeof errorDetails === 'object' &&
-            'fatal' in errorDetails &&
-            (errorDetails as { fatal?: boolean }).fatal === true,
-        )
+      const hasWranglerError = this.hasWranglerError(errorMessage, errorDetails)
+      const isFatal = this.isFatalExecutionError(
+        errorMessage,
+        errorDetails,
+        hasWranglerError,
+      )
 
       return {
         content: [
