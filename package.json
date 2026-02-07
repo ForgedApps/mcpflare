@@ -1,6 +1,6 @@
 {
   "name": "mcpflare",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Use local MCP servers securely with zero-trust isolation while reducing context window token usage by up to 98%.",
   "type": "module",
   "main": "dist/server/index.js",
@@ -36,14 +36,14 @@
     "sandbox",
     "model-context-protocol"
   ],
-  "author": "James Gentes",
+  "author": "Forged Apps",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jgentes/mcpflare.git"
+    "url": "https://github.com/forgedapps/mcpflare.git"
   },
   "bugs": {
-    "url": "https://github.com/jgentes/mcpflare/issues"
+    "url": "https://github.com/forgedapps/mcpflare/issues"
   },
   "homepage": "https://mcpflare.org",
   "dependencies": {

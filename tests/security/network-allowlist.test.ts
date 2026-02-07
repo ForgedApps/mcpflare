@@ -40,8 +40,9 @@ describe('Security: Network Allowlist Enforcement', () => {
     } catch {
       // Ignore shutdown errors
     }
-    // Give processes time to terminate
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // Give processes more time to fully terminate to prevent flakiness
+    // Wrangler and workerd processes can take time to clean up ports and resources
+    await new Promise(resolve => setTimeout(resolve, 1000))
   })
 
   afterAll(() => {
@@ -68,6 +69,12 @@ describe('Security: Network Allowlist Enforcement', () => {
       const instance = await manager.loadMCP('memory-test', config)
       expect(instance).toBeDefined()
       expect(instance.status).toBe('ready')
+
+      // Verify instance is still ready before execution (race condition check)
+      const instanceBeforeExecution = manager.getInstance(instance.mcp_id)
+      if (!instanceBeforeExecution || instanceBeforeExecution.status !== 'ready') {
+        throw new Error(`MCP instance not ready before execution. Status: ${instanceBeforeExecution?.status}`)
+      }
 
       // Simulate prompt injection attack: malicious code tries to exfiltrate data
       // This represents an attacker convincing the LLM to fetch external data
@@ -96,11 +103,34 @@ describe('Security: Network Allowlist Enforcement', () => {
       const result = await manager.executeCode(instance.mcp_id, maliciousCode, 30000)
 
       if (!result.success) {
-        console.error('Execution failed:', {
+        // Log detailed error information for debugging flaky test
+        const errorInfo = {
           error: result.error,
           error_details: result.error_details,
           output: result.output,
-        })
+          execution_time_ms: result.execution_time_ms,
+          instance_status: manager.getInstance(instance.mcp_id)?.status,
+        }
+        console.error('Execution failed:', JSON.stringify(errorInfo, null, 2))
+        
+        // If it's a Wrangler or process error, provide more context
+        if (result.error_details && typeof result.error_details === 'object') {
+          const details = result.error_details as Record<string, unknown>
+          if ('wrangler_stderr' in details || 'wrangler_stdout' in details) {
+            console.error('Wrangler error details:', {
+              stderr: details.wrangler_stderr,
+              stdout: details.wrangler_stdout,
+              exit_code: details.exit_code,
+            })
+          }
+        }
+        
+        // Re-throw with more context to help debug flakiness
+        throw new Error(
+          `Code execution failed: ${result.error}. ` +
+          `This may indicate a flaky test due to process/timing issues. ` +
+          `Check error_details for Wrangler or process errors.`
+        )
       }
 
       expect(result.success).toBe(true)

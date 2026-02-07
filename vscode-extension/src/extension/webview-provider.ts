@@ -368,7 +368,7 @@ export class MCPflareWebviewProvider implements vscode.WebviewViewProvider {
 
       case 'openMCPflareDocs':
         await vscode.env.openExternal(
-          vscode.Uri.parse('https://github.com/jgentes/mcpflare'),
+          vscode.Uri.parse('https://github.com/forgedapps/mcpflare'),
         )
         break
 
