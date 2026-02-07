@@ -1,5 +1,17 @@
 name: Publish
 
+# npm OIDC Trusted Publishing Setup:
+# 1. Go to https://www.npmjs.com/package/mcpflare (or create the package first)
+# 2. Navigate to Settings → Trusted Publishers → Add Trusted Publisher
+# 3. Select "GitHub Actions"
+# 4. Enter:
+#    - Owner: ForgedApps (or your GitHub org/username)
+#    - Repository: ForgedApps/mcpflare (or your repo)
+#    - Workflow filename: release.yml (must match exactly, case-sensitive)
+#    - Environment: npm (optional but recommended)
+# 5. Save the configuration
+# Note: The package must exist on npm before Trusted Publishing can be configured
+
 on:
   push:
     tags:
@@ -7,12 +19,15 @@ on:
 
 permissions:
   contents: write
-  id-token: write
+  id-token: write  # Required for npm OIDC authentication
 
 jobs:
   publish:
     name: Publish to npm and extensions
     runs-on: ubuntu-latest
+    # Only use environment if your npm Trusted Publisher was configured WITH an environment
+    # If your trusted publisher shows no environment, remove the line below:
+    # environment: npm
 
     steps:
       - name: Checkout code
@@ -24,6 +39,9 @@ jobs:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+          # OIDC authentication via Trusted Publishing - no token needed
+          # setup-node@v4 automatically uses OIDC when id-token: write permission is set
+          # and no npm-token is provided
 
       - name: Install dependencies
         run: npm ci
@@ -42,6 +60,9 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NPM_CONFIG_PROVENANCE: true
+          # Explicitly disable token auth to force OIDC usage
+          # setup-node@v4 may default NPM_AUTH_TOKEN, which interferes with OIDC
+          NPM_AUTH_TOKEN: ""
 
       - name: Create GitHub Release
         run: gh release create "${{ github.ref_name }}" --generate-notes
