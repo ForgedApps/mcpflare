@@ -140,6 +140,7 @@ describe('extension/index', () => {
       const bundledServerPath = path.join(
         '/mock/extension',
         'mcpflare-server',
+        'dist',
         'server',
         'index.js',
       );
@@ -158,6 +159,7 @@ describe('extension/index', () => {
       const bundledServerPath = path.join(
         '/mock/extension',
         'mcpflare-server',
+        'dist',
         'server',
         'index.js',
       );
