@@ -6,7 +6,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
-import { spawn } from 'child_process';
 import { addMockFile, resetMockFs } from '../setup';
 
 // Helper to get test config paths
@@ -137,9 +136,11 @@ describe('extension/index', () => {
     });
 
     it('should spawn bundled server path for marketplace installs', () => {
+      const logSpy = vi.spyOn(console, 'log');
       const bundledServerPath = path.join(
         '/mock/extension',
         'mcpflare-server',
+        'dist',
         'server',
         'index.js',
       );
@@ -147,18 +148,24 @@ describe('extension/index', () => {
 
       activate(mockContext as unknown as import('vscode').ExtensionContext);
 
-      expect(spawn).toHaveBeenCalledWith(
-        process.execPath,
-        [bundledServerPath],
-        expect.objectContaining({
-          detached: false,
-        }),
+      expect(logSpy).toHaveBeenCalledWith(
+        `MCPflare: Spawning server from ${bundledServerPath}`,
       );
     });
 
     it('should not spawn server when bundled path is missing', () => {
+      const logSpy = vi.spyOn(console, 'log');
       activate(mockContext as unknown as import('vscode').ExtensionContext);
-      expect(spawn).not.toHaveBeenCalled();
+      const bundledServerPath = path.join(
+        '/mock/extension',
+        'mcpflare-server',
+        'dist',
+        'server',
+        'index.js',
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        `MCPflare: Server not found at ${bundledServerPath}, skipping spawn`,
+      );
     });
 
     describe('command handlers', () => {

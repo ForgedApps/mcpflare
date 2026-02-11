@@ -439,7 +439,7 @@ describe('config-loader', () => {
 
       const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
-        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+        path.join('/fake/extension/path', 'mcpflare-server', 'dist', 'server', 'index.js'),
       );
     });
 
@@ -458,7 +458,7 @@ describe('config-loader', () => {
       const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
       expect(savedConfig.mcpServers.mcpflare.command).toBe('node');
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
-        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+        path.join('/fake/extension/path', 'mcpflare-server', 'dist', 'server', 'index.js'),
       );
     });
 
@@ -467,6 +467,7 @@ describe('config-loader', () => {
       const bundledServerPath = path.join(
         '/fake/extension/path',
         'mcpflare-server',
+        'dist',
         'server',
         'index.js',
       );
@@ -496,7 +497,7 @@ describe('config-loader', () => {
 
       const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
-        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+        path.join('/fake/extension/path', 'mcpflare-server', 'dist', 'server', 'index.js'),
       );
     });
   });
