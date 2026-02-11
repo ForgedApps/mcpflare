@@ -45,7 +45,6 @@ import {
   disableMCPInIDE,
   enableMCPInIDE,
   ensureMCPflareInConfig,
-  migrateMCPflareServerPathInConfig,
   removeMCPflareFromConfig,
   getMCPStatus,
   invalidateMCPCache,
@@ -465,8 +464,14 @@ describe('config-loader', () => {
 
     it('should return success without adding if mcpflare already exists', () => {
       const cursorPath = getTestConfigPath('cursor');
+      const bundledServerPath = path.join(
+        '/fake/extension/path',
+        'mcpflare-server',
+        'server',
+        'index.js',
+      );
       addMockFile(cursorPath, createSampleMCPConfig({
-        mcpflare: { command: 'node', args: ['existing.js'] },
+        mcpflare: { command: 'node', args: [bundledServerPath] },
       }));
 
       const result = ensureMCPflareInConfig('/fake/extension/path');
@@ -476,43 +481,11 @@ describe('config-loader', () => {
       expect(result.message).toContain('already in config');
     });
 
-    it('should migrate legacy mcpflare server path in existing config', () => {
-      const cursorPath = getTestConfigPath('cursor');
-      const legacyPath = path.join(
-        '/fake/extension/path',
-        '..',
-        'dist',
-        'server',
-        'index.js',
-      );
-      addMockFile(cursorPath, createSampleMCPConfig({
-        mcpflare: { command: 'node', args: [legacyPath] },
-      }));
-
-      const result = ensureMCPflareInConfig('/fake/extension/path');
-      
-      expect(result.success).toBe(true);
-      expect(result.added).toBe(false);
-      expect(result.message).toContain('Updated');
-
-      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
-      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
-        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
-      );
-    });
-
     it('should restore mcpflare from disabled section', () => {
       const cursorPath = getTestConfigPath('cursor');
-      const legacyPath = path.join(
-        '/fake/extension/path',
-        '..',
-        'dist',
-        'server',
-        'index.js',
-      );
       addMockFile(cursorPath, createSampleMCPConfig(
         {},
-        { _mcpflare_disabled: { mcpflare: { command: 'node', args: [legacyPath] } } }
+        { _mcpflare_disabled: { mcpflare: { command: 'node' } } }
       ));
 
       const result = ensureMCPflareInConfig('/fake/extension/path');
@@ -525,50 +498,6 @@ describe('config-loader', () => {
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
         path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
       );
-    });
-  });
-
-  describe('migrateMCPflareServerPathInConfig', () => {
-    it('should return no-op when no config exists', () => {
-      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
-      expect(result.success).toBe(true);
-      expect(result.migrated).toBe(false);
-      expect(result.message).toContain('No IDE config file found');
-    });
-
-    it('should migrate legacy active mcpflare path', () => {
-      const cursorPath = getTestConfigPath('cursor');
-      const legacyPath = path.join(
-        '/fake/extension/path',
-        '..',
-        'dist',
-        'server',
-        'index.js',
-      );
-      addMockFile(cursorPath, createSampleMCPConfig({
-        mcpflare: { command: 'node', args: [legacyPath] },
-      }));
-
-      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
-
-      expect(result.success).toBe(true);
-      expect(result.migrated).toBe(true);
-
-      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
-      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
-        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
-      );
-    });
-
-    it('should not migrate custom non-legacy mcpflare path', () => {
-      const cursorPath = getTestConfigPath('cursor');
-      addMockFile(cursorPath, createSampleMCPConfig({
-        mcpflare: { command: 'node', args: ['/custom/mcpflare.js'] },
-      }));
-
-      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
-      expect(result.success).toBe(true);
-      expect(result.migrated).toBe(false);
     });
   });
 

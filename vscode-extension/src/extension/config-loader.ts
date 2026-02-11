@@ -11,10 +11,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import type { MCPServerInfo } from './types'
-import {
-  isLegacyMCPflareServerPath,
-  resolveMCPflareServerPath,
-} from './server-path'
+import { resolveMCPflareServerPath } from './server-path'
 
 /**
  * IDE configuration file format (matches Cursor/Claude Code format)
@@ -258,10 +255,6 @@ type MCPServerConfig = {
   disabled?: boolean
 }
 
-function normalizePathForComparison(filePath: string): string {
-  return path.normalize(filePath).toLowerCase()
-}
-
 function buildMCPflareConfig(
   extensionPath: string,
   existingConfig?: MCPServerConfig,
@@ -271,30 +264,6 @@ function buildMCPflareConfig(
     command: 'node',
     args: [resolveMCPflareServerPath(extensionPath)],
   }
-}
-
-function shouldMigrateMCPflareConfig(
-  extensionPath: string,
-  config: MCPServerConfig,
-): boolean {
-  if (config.command !== 'node') {
-    return false
-  }
-
-  const configuredPath = config.args?.[0]
-  if (!configuredPath) {
-    return true
-  }
-
-  const expectedPath = resolveMCPflareServerPath(extensionPath)
-  if (
-    normalizePathForComparison(configuredPath) ===
-    normalizePathForComparison(expectedPath)
-  ) {
-    return false
-  }
-
-  return isLegacyMCPflareServerPath(configuredPath, extensionPath)
 }
 
 /**
@@ -739,82 +708,6 @@ export function enableMCPInIDE(
 }
 
 /**
- * Repair legacy/broken mcpflare server paths in existing IDE config entries.
- * This is a non-intrusive migration: it only updates existing mcpflare entries.
- */
-export function migrateMCPflareServerPathInConfig(extensionPath: string): {
-  success: boolean
-  migrated: boolean
-  message: string
-} {
-  const configPath = getPrimaryIDEConfigPath()
-  if (!configPath) {
-    return {
-      success: true,
-      migrated: false,
-      message: 'No IDE config file found',
-    }
-  }
-
-  const rawConfig = readRawConfigFile(configPath)
-  if (!rawConfig) {
-    return {
-      success: false,
-      migrated: false,
-      message: 'Failed to read IDE config',
-    }
-  }
-
-  let changed = false
-  const activeConfig = rawConfig.mcpServers['mcpflare'] as MCPServerConfig | undefined
-  if (activeConfig && shouldMigrateMCPflareConfig(extensionPath, activeConfig)) {
-    rawConfig.mcpServers['mcpflare'] = buildMCPflareConfig(
-      extensionPath,
-      activeConfig,
-    )
-    changed = true
-  }
-
-  const disabledConfig = rawConfig._mcpflare_disabled?.[
-    'mcpflare'
-  ] as MCPServerConfig | undefined
-  if (
-    disabledConfig &&
-    shouldMigrateMCPflareConfig(extensionPath, disabledConfig)
-  ) {
-    rawConfig._mcpflare_disabled = rawConfig._mcpflare_disabled ?? {}
-    rawConfig._mcpflare_disabled['mcpflare'] = buildMCPflareConfig(
-      extensionPath,
-      disabledConfig,
-    )
-    changed = true
-  }
-
-  if (!changed) {
-    return {
-      success: true,
-      migrated: false,
-      message: 'No mcpflare path migration needed',
-    }
-  }
-
-  if (!writeConfigFile(configPath, rawConfig)) {
-    return {
-      success: false,
-      migrated: false,
-      message: 'Failed to write config file',
-    }
-  }
-
-  console.log('MCPflare: Migrated legacy mcpflare server path in IDE config')
-  return {
-    success: true,
-    migrated: true,
-    message: 'Migrated mcpflare server path',
-  }
-}
-
-/**
  * Ensure mcpflare is in the IDE config
  * If not present, adds it with the bundled server path
  */
@@ -877,28 +770,6 @@ export function ensureMCPflareInConfig(extensionPath: string): {
 
   // Check if mcpflare already exists
   if (rawConfig.mcpServers['mcpflare']) {
-    const existingConfig = rawConfig.mcpServers['mcpflare'] as MCPServerConfig
-    if (shouldMigrateMCPflareConfig(extensionPath, existingConfig)) {
-      rawConfig.mcpServers['mcpflare'] = buildMCPflareConfig(
-        extensionPath,
-        existingConfig,
-      )
-      if (!writeConfigFile(configPath, rawConfig)) {
-        return {
-          success: false,
-          message: 'Failed to write config file',
-          added: false,
-        }
-      }
-
-      console.log('MCPflare: Updated legacy mcpflare server path in IDE config')
-      return {
-        success: true,
-        message: 'Updated mcpflare server path',
-        added: false,
-      }
-    }
-
     return {
       success: true,
       message: 'mcpflare already in config',
