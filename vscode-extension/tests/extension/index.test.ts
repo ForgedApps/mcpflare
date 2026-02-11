@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { addMockFile, resetMockFs } from '../setup';
+import { addMockFile, getMockFileContent, resetMockFs } from '../setup';
 
 // Helper to get test config paths
 function getTestConfigPath(ide: 'cursor'): string {
@@ -165,6 +165,39 @@ describe('extension/index', () => {
       expect(spawn).toHaveBeenCalledWith(
         process.execPath,
         [devServerPath],
+        expect.objectContaining({
+          detached: false,
+        }),
+      );
+    });
+
+    it('should migrate legacy mcpflare config path on activation', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      const bundledServerPath = path.join(
+        '/mock/extension',
+        'mcpflare-server',
+        'server',
+        'index.js',
+      );
+      const legacyPath = path.join(
+        '/mock/extension',
+        '..',
+        'dist',
+        'server',
+        'index.js',
+      );
+      addMockFile(cursorPath, createSampleMCPConfig({
+        mcpflare: { command: 'node', args: [legacyPath] },
+      }));
+      addMockFile(bundledServerPath, 'console.log("server")');
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(bundledServerPath);
+      expect(spawn).toHaveBeenCalledWith(
+        process.execPath,
+        [bundledServerPath],
         expect.objectContaining({
           detached: false,
         }),

@@ -45,6 +45,7 @@ import {
   disableMCPInIDE,
   enableMCPInIDE,
   ensureMCPflareInConfig,
+  migrateMCPflareServerPathInConfig,
   removeMCPflareFromConfig,
   getMCPStatus,
   invalidateMCPCache,
@@ -524,6 +525,50 @@ describe('config-loader', () => {
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
         path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
       );
+    });
+  });
+
+  describe('migrateMCPflareServerPathInConfig', () => {
+    it('should return no-op when no config exists', () => {
+      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
+      expect(result.success).toBe(true);
+      expect(result.migrated).toBe(false);
+      expect(result.message).toContain('No IDE config file found');
+    });
+
+    it('should migrate legacy active mcpflare path', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      const legacyPath = path.join(
+        '/fake/extension/path',
+        '..',
+        'dist',
+        'server',
+        'index.js',
+      );
+      addMockFile(cursorPath, createSampleMCPConfig({
+        mcpflare: { command: 'node', args: [legacyPath] },
+      }));
+
+      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
+
+      expect(result.success).toBe(true);
+      expect(result.migrated).toBe(true);
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+      );
+    });
+
+    it('should not migrate custom non-legacy mcpflare path', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      addMockFile(cursorPath, createSampleMCPConfig({
+        mcpflare: { command: 'node', args: ['/custom/mcpflare.js'] },
+      }));
+
+      const result = migrateMCPflareServerPathInConfig('/fake/extension/path');
+      expect(result.success).toBe(true);
+      expect(result.migrated).toBe(false);
     });
   });
 

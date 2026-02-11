@@ -10,7 +10,10 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
-import { loadAllMCPServers } from './config-loader';
+import {
+  loadAllMCPServers,
+  migrateMCPflareServerPathInConfig,
+} from './config-loader';
 import { resolveMCPflareServerPath } from './server-path';
 
 let webviewProvider: MCPflareWebviewProvider | undefined;
@@ -86,6 +89,13 @@ function stopMCPflareServer(): void {
 export function activate(context: vscode.ExtensionContext): void {
   console.log('MCPflare extension activated - build v2');
   console.log('MCPflare: Extension path:', context.extensionPath);
+
+  const migrationResult = migrateMCPflareServerPathInConfig(context.extensionPath);
+  if (!migrationResult.success) {
+    console.warn(`MCPflare: Failed to migrate legacy server path: ${migrationResult.message}`);
+  } else if (migrationResult.migrated) {
+    console.log('MCPflare: Migrated legacy mcpflare server path in IDE config');
+  }
 
   // Spawn the mcpflare MCP server
   mcpServerProcess = spawnMCPflareServer(context);
