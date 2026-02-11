@@ -7,6 +7,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
 import { loadAllMCPServers } from './config-loader';
@@ -27,7 +28,6 @@ function getMCPflareServerPath(context: vscode.ExtensionContext): string {
  */
 function spawnMCPflareServer(context: vscode.ExtensionContext): ChildProcess | undefined {
   const serverPath = getMCPflareServerPath(context);
-  const fs = require('fs');
   
   if (!fs.existsSync(serverPath)) {
     console.log(`MCPflare: Server not found at ${serverPath}, skipping spawn`);
