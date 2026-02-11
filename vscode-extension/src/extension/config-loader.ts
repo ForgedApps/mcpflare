@@ -11,6 +11,10 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import type { MCPServerInfo } from './types'
+import {
+  isLegacyMCPflareServerPath,
+  resolveMCPflareServerPath,
+} from './server-path'
 
 /**
  * IDE configuration file format (matches Cursor/Claude Code format)
@@ -252,6 +256,45 @@ type MCPServerConfig = {
   headers?: Record<string, string>
   env?: Record<string, string>
   disabled?: boolean
+}
+
+function normalizePathForComparison(filePath: string): string {
+  return path.normalize(filePath).toLowerCase()
+}
+
+function buildMCPflareConfig(
+  extensionPath: string,
+  existingConfig?: MCPServerConfig,
+): MCPServerConfig {
+  return {
+    ...(existingConfig ?? {}),
+    command: 'node',
+    args: [resolveMCPflareServerPath(extensionPath)],
+  }
+}
+
+function shouldMigrateMCPflareConfig(
+  extensionPath: string,
+  config: MCPServerConfig,
+): boolean {
+  if (config.command !== 'node') {
+    return false
+  }
+
+  const configuredPath = config.args?.[0]
+  if (!configuredPath) {
+    return true
+  }
+
+  const expectedPath = resolveMCPflareServerPath(extensionPath)
+  if (
+    normalizePathForComparison(configuredPath) ===
+    normalizePathForComparison(expectedPath)
+  ) {
+    return false
+  }
+
+  return isLegacyMCPflareServerPath(configuredPath, extensionPath)
 }
 
 /**
@@ -705,6 +748,7 @@ export function ensureMCPflareInConfig(extensionPath: string): {
   added: boolean
 } {
   const configPath = getPrimaryIDEConfigPath()
+  const desiredConfig = buildMCPflareConfig(extensionPath)
 
   // If no config exists, we need to create one
   if (!configPath) {
@@ -717,19 +761,9 @@ export function ensureMCPflareInConfig(extensionPath: string): {
         fs.mkdirSync(cursorConfigDir, { recursive: true })
       }
 
-      const serverPath = path.join(
-        extensionPath,
-        '..',
-        'dist',
-        'server',
-        'index.js',
-      )
       const newConfig: MCPServersConfig = {
         mcpServers: {
-          mcpflare: {
-            command: 'node',
-            args: [serverPath],
-          },
+          mcpflare: desiredConfig,
         },
       }
 
@@ -767,6 +801,28 @@ export function ensureMCPflareInConfig(extensionPath: string): {
 
   // Check if mcpflare already exists
   if (rawConfig.mcpServers['mcpflare']) {
+    const existingConfig = rawConfig.mcpServers['mcpflare'] as MCPServerConfig
+    if (shouldMigrateMCPflareConfig(extensionPath, existingConfig)) {
+      rawConfig.mcpServers['mcpflare'] = buildMCPflareConfig(
+        extensionPath,
+        existingConfig,
+      )
+      if (!writeConfigFile(configPath, rawConfig)) {
+        return {
+          success: false,
+          message: 'Failed to write config file',
+          added: false,
+        }
+      }
+
+      console.log('MCPflare: Updated legacy mcpflare server path in IDE config')
+      return {
+        success: true,
+        message: 'Updated mcpflare server path',
+        added: false,
+      }
+    }
+
     return {
       success: true,
       message: 'mcpflare already in config',
@@ -777,9 +833,12 @@ export function ensureMCPflareInConfig(extensionPath: string): {
   // Check if it's in disabled section (shouldn't be, but just in case)
   if (rawConfig._mcpflare_disabled?.['mcpflare']) {
     // Move it back to active
-    const mcpConfig = rawConfig._mcpflare_disabled['mcpflare']
+    const mcpConfig = rawConfig._mcpflare_disabled['mcpflare'] as MCPServerConfig
     delete rawConfig._mcpflare_disabled['mcpflare']
-    rawConfig.mcpServers['mcpflare'] = mcpConfig
+    rawConfig.mcpServers['mcpflare'] = buildMCPflareConfig(
+      extensionPath,
+      mcpConfig,
+    )
 
     if (!writeConfigFile(configPath, rawConfig)) {
       return {
@@ -798,17 +857,7 @@ export function ensureMCPflareInConfig(extensionPath: string): {
   }
 
   // Add mcpflare entry pointing to the bundled server
-  const serverPath = path.join(
-    extensionPath,
-    '..',
-    'dist',
-    'server',
-    'index.js',
-  )
-  rawConfig.mcpServers['mcpflare'] = {
-    command: 'node',
-    args: [serverPath],
-  }
+  rawConfig.mcpServers['mcpflare'] = desiredConfig
 
   if (!writeConfigFile(configPath, rawConfig)) {
     return {

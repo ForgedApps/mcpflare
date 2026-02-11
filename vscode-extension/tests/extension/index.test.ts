@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { addMockFile, resetMockFs } from '../setup';
 
 // Helper to get test config paths
@@ -133,6 +134,41 @@ describe('extension/index', () => {
 
       // Extension should activate successfully
       expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalled();
+    });
+
+    it('should spawn bundled server path for marketplace installs', () => {
+      const bundledServerPath = path.join(
+        '/mock/extension',
+        'mcpflare-server',
+        'server',
+        'index.js',
+      );
+      addMockFile(bundledServerPath, 'console.log("server")');
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      expect(spawn).toHaveBeenCalledWith(
+        process.execPath,
+        [bundledServerPath],
+        expect.objectContaining({
+          detached: false,
+        }),
+      );
+    });
+
+    it('should fall back to dev server path when bundled server is missing', () => {
+      const devServerPath = path.join('/mock/extension', '..', 'dist', 'server', 'index.js');
+      addMockFile(devServerPath, 'console.log("server")');
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      expect(spawn).toHaveBeenCalledWith(
+        process.execPath,
+        [devServerPath],
+        expect.objectContaining({
+          detached: false,
+        }),
+      );
     });
 
     describe('command handlers', () => {

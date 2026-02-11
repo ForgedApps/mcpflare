@@ -429,6 +429,20 @@ describe('config-loader', () => {
   });
 
   describe('ensureMCPflareInConfig', () => {
+    it('should create Cursor config with bundled server path when no configs exist', () => {
+      const cursorPath = getTestConfigPath('cursor');
+
+      const result = ensureMCPflareInConfig('/fake/extension/path');
+      
+      expect(result.success).toBe(true);
+      expect(result.added).toBe(true);
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+      );
+    });
+
     it('should add mcpflare to existing config', () => {
       const cursorPath = getTestConfigPath('cursor');
       addMockFile(cursorPath, createSampleMCPConfig({
@@ -440,6 +454,12 @@ describe('config-loader', () => {
       expect(result.success).toBe(true);
       expect(result.added).toBe(true);
       expect(getMCPStatus('mcpflare')).toBe('active');
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.command).toBe('node');
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+      );
     });
 
     it('should return success without adding if mcpflare already exists', () => {
@@ -455,11 +475,43 @@ describe('config-loader', () => {
       expect(result.message).toContain('already in config');
     });
 
+    it('should migrate legacy mcpflare server path in existing config', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      const legacyPath = path.join(
+        '/fake/extension/path',
+        '..',
+        'dist',
+        'server',
+        'index.js',
+      );
+      addMockFile(cursorPath, createSampleMCPConfig({
+        mcpflare: { command: 'node', args: [legacyPath] },
+      }));
+
+      const result = ensureMCPflareInConfig('/fake/extension/path');
+      
+      expect(result.success).toBe(true);
+      expect(result.added).toBe(false);
+      expect(result.message).toContain('Updated');
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+      );
+    });
+
     it('should restore mcpflare from disabled section', () => {
       const cursorPath = getTestConfigPath('cursor');
+      const legacyPath = path.join(
+        '/fake/extension/path',
+        '..',
+        'dist',
+        'server',
+        'index.js',
+      );
       addMockFile(cursorPath, createSampleMCPConfig(
         {},
-        { _mcpflare_disabled: { mcpflare: { command: 'node' } } }
+        { _mcpflare_disabled: { mcpflare: { command: 'node', args: [legacyPath] } } }
       ));
 
       const result = ensureMCPflareInConfig('/fake/extension/path');
@@ -467,6 +519,11 @@ describe('config-loader', () => {
       expect(result.success).toBe(true);
       expect(result.added).toBe(true);
       expect(result.message).toContain('Restored');
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join('/fake/extension/path', 'mcpflare-server', 'server', 'index.js'),
+      );
     });
   });
 
