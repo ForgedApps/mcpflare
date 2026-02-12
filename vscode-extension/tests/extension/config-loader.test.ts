@@ -45,6 +45,7 @@ import {
   disableMCPInIDE,
   enableMCPInIDE,
   ensureMCPflareInConfig,
+  removeMCPflareAndRestoreDisabledMCPsFromAllConfigs,
   removeMCPflareFromConfig,
   getMCPStatus,
   invalidateMCPCache,
@@ -499,6 +500,62 @@ describe('config-loader', () => {
       expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
         path.join('/fake/extension/path', 'mcpflare-server', 'dist', 'server', 'index.js'),
       );
+    });
+  });
+
+  describe('removeMCPflareAndRestoreDisabledMCPsFromAllConfigs', () => {
+    it('should return success when no IDE configs exist', () => {
+      const result = removeMCPflareAndRestoreDisabledMCPsFromAllConfigs();
+      expect(result.success).toBe(true);
+      expect(result.restoredCount).toBe(0);
+      expect(result.updatedConfigs).toBe(0);
+    });
+
+    it('should remove mcpflare and restore disabled MCPs in Cursor config', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      addMockFile(cursorPath, createSampleMCPConfig(
+        {
+          mcpflare: { command: 'node', args: ['mcpflare.js'] },
+          'active-mcp': { command: 'node', args: ['active.js'] },
+        },
+        {
+          _mcpflare_disabled: {
+            'guarded-mcp': { command: 'python', args: ['guarded.py'] },
+          },
+          _mcpflare_metadata: {
+            disabled_at: '2026-01-01T00:00:00.000Z',
+          },
+        }
+      ));
+
+      const result = removeMCPflareAndRestoreDisabledMCPsFromAllConfigs();
+      expect(result.success).toBe(true);
+      expect(result.restoredCount).toBe(1);
+      expect(result.updatedConfigs).toBe(1);
+
+      const saved = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(saved.mcpServers.mcpflare).toBeUndefined();
+      expect(saved.mcpServers['guarded-mcp']).toBeDefined();
+      expect(saved._mcpflare_disabled).toBeUndefined();
+      expect(saved._mcpflare_metadata).toBeUndefined();
+    });
+
+    it('should clean up all detected IDE configs', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      const claudePath = getTestConfigPath('claude');
+      addMockFile(cursorPath, createSampleMCPConfig(
+        { mcpflare: { command: 'node', args: ['mcpflare.js'] } },
+        { _mcpflare_disabled: { 'cursor-guarded': { command: 'node' } } }
+      ));
+      addMockFile(claudePath, createSampleMCPConfig(
+        { mcpflare: { command: 'node', args: ['mcpflare.js'] } },
+        { _mcpflare_disabled: { 'claude-guarded': { command: 'node' } } }
+      ));
+
+      const result = removeMCPflareAndRestoreDisabledMCPsFromAllConfigs();
+      expect(result.success).toBe(true);
+      expect(result.restoredCount).toBe(2);
+      expect(result.updatedConfigs).toBe(2);
     });
   });
 

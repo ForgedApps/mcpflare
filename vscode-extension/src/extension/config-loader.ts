@@ -13,6 +13,8 @@ import * as path from 'path'
 import type { MCPServerInfo } from './types'
 import { resolveMCPflareServerPath } from './server-path'
 
+type IDESource = 'claude' | 'copilot' | 'cursor'
+
 /**
  * IDE configuration file format (matches Cursor/Claude Code format)
  */
@@ -424,9 +426,7 @@ export function getDetectedConfigs(): { ide: string; path: string }[] {
 /**
  * Find the first existing IDE config path for a given IDE
  */
-function findIDEConfigPath(
-  ide: 'claude' | 'copilot' | 'cursor',
-): string | null {
+function findIDEConfigPath(ide: IDESource): string | null {
   const paths = IDE_CONFIG_PATHS[ide]
   for (const configPath of paths) {
     if (fileExists(configPath)) {
@@ -457,12 +457,24 @@ export function getPrimaryIDEConfigPath(): string | null {
  * Get config path for a specific IDE source
  */
 export function getIDEConfigPath(
-  source: 'claude' | 'copilot' | 'cursor' | 'unknown',
+  source: IDESource | 'unknown',
 ): string | null {
   if (source === 'unknown') {
     return getPrimaryIDEConfigPath()
   }
   return findIDEConfigPath(source)
+}
+
+function getAllExistingIDEConfigPaths(): Array<{
+  source: IDESource
+  path: string
+}> {
+  const sources: IDESource[] = ['claude', 'cursor', 'copilot']
+  return sources
+    .map((source) => ({ source, path: findIDEConfigPath(source) }))
+    .filter((entry): entry is { source: IDESource; path: string } =>
+      Boolean(entry.path),
+    )
 }
 
 /**
@@ -850,6 +862,96 @@ export function removeMCPflareFromConfig(): {
 
   console.log('MCPflare: Removed mcpflare from IDE config')
   return { success: true, message: 'Removed mcpflare from IDE config' }
+}
+
+/**
+ * Remove mcpflare from all IDE configs and restore all guarded MCPs.
+ * Intended for extension uninstall/disable cleanup.
+ */
+export function removeMCPflareAndRestoreDisabledMCPsFromAllConfigs(): {
+  success: boolean
+  message: string
+  restoredCount: number
+  updatedConfigs: number
+} {
+  const configEntries = getAllExistingIDEConfigPaths()
+  if (configEntries.length === 0) {
+    return {
+      success: true,
+      message: 'No IDE config files found',
+      restoredCount: 0,
+      updatedConfigs: 0,
+    }
+  }
+
+  let restoredCount = 0
+  let updatedConfigs = 0
+
+  for (const entry of configEntries) {
+    const rawConfig = readRawConfigFile(entry.path)
+    if (!rawConfig) {
+      return {
+        success: false,
+        message: `Failed to read ${entry.source} IDE config`,
+        restoredCount,
+        updatedConfigs,
+      }
+    }
+
+    let changed = false
+
+    if (rawConfig.mcpServers['mcpflare']) {
+      delete rawConfig.mcpServers['mcpflare']
+      changed = true
+    }
+
+    if (rawConfig._mcpflare_disabled) {
+      for (const [mcpName, mcpConfig] of Object.entries(
+        rawConfig._mcpflare_disabled,
+      )) {
+        if (mcpName === 'mcpflare') {
+          delete rawConfig._mcpflare_disabled[mcpName]
+          changed = true
+          continue
+        }
+
+        if (!rawConfig.mcpServers[mcpName]) {
+          rawConfig.mcpServers[mcpName] = mcpConfig
+          restoredCount++
+        }
+        delete rawConfig._mcpflare_disabled[mcpName]
+        changed = true
+      }
+
+      if (Object.keys(rawConfig._mcpflare_disabled).length === 0) {
+        delete rawConfig._mcpflare_disabled
+      }
+    }
+
+    if (rawConfig._mcpflare_metadata) {
+      delete rawConfig._mcpflare_metadata
+      changed = true
+    }
+
+    if (changed) {
+      if (!writeConfigFile(entry.path, rawConfig)) {
+        return {
+          success: false,
+          message: `Failed to write ${entry.source} IDE config`,
+          restoredCount,
+          updatedConfigs,
+        }
+      }
+      updatedConfigs++
+    }
+  }
+
+  return {
+    success: true,
+    message: `Cleaned up MCPflare in ${updatedConfigs} config${updatedConfigs === 1 ? '' : 's'}`,
+    restoredCount,
+    updatedConfigs,
+  }
 }
 
 /**

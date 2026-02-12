@@ -6,15 +6,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
-import { addMockFile, resetMockFs } from '../setup';
+import { addMockFile, getMockFileContent, resetMockFs } from '../setup';
 
 // Helper to get test config paths
-function getTestConfigPath(ide: 'cursor'): string {
-  return path.join(os.homedir(), '.cursor', 'mcp.json');
+function getTestConfigPath(ide: 'cursor' | 'claude'): string {
+  switch (ide) {
+    case 'claude':
+      return path.join(os.homedir(), '.claude', 'mcp.json');
+    case 'cursor':
+      return path.join(os.homedir(), '.cursor', 'mcp.json');
+  }
 }
 
-function createSampleMCPConfig(mcpServers: Record<string, unknown>): string {
-  return JSON.stringify({ mcpServers }, null, 2);
+function createSampleMCPConfig(
+  mcpServers: Record<string, unknown>,
+  extras?: Record<string, unknown>,
+): string {
+  return JSON.stringify({ mcpServers, ...extras }, null, 2);
 }
 
 // Get access to the vscode mock from setup
@@ -37,6 +45,11 @@ describe('extension/index', () => {
   beforeEach(() => {
     resetMockFs();
     vi.clearAllMocks();
+    vi.mocked(vscode.extensions.getExtension).mockImplementation((id: string) => ({
+      id,
+      isActive: true,
+      packageJSON: { version: 'test' },
+    }) as unknown as import('vscode').Extension<unknown>);
     
     mockContext = {
       extensionUri: { fsPath: '/mock/extension' },
@@ -133,6 +146,28 @@ describe('extension/index', () => {
 
       // Extension should activate successfully
       expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalled();
+    });
+
+    it('should ensure mcpflare is added to IDE config on activation', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      addMockFile(cursorPath, createSampleMCPConfig({
+        github: { url: 'https://api.github.com/mcp' },
+      }));
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare).toBeDefined();
+      expect(savedConfig.mcpServers.mcpflare.command).toBe('node');
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(
+        path.join(
+          '/mock/extension',
+          'mcpflare-server',
+          'dist',
+          'server',
+          'index.js',
+        ),
+      );
     });
 
     it('should spawn bundled server path for marketplace installs', () => {
@@ -241,6 +276,38 @@ describe('extension/index', () => {
         deactivate();
         deactivate();
       }).not.toThrow();
+    });
+
+    it('should remove mcpflare and restore disabled MCPs on uninstall cleanup', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      addMockFile(cursorPath, createSampleMCPConfig(
+        {
+          mcpflare: { command: 'node', args: ['mcpflare.js'] },
+        },
+        {
+          _mcpflare_metadata: { disabled_at: '2026-02-12T00:00:00.000Z' },
+          _mcpflare_disabled: {
+            context7: { url: 'https://mcp.context7.com/mcp', headers: {} },
+          },
+        },
+      ));
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      const extensionChangeHandler = vi.mocked(vscode.extensions.onDidChange).mock
+        .calls[0]?.[0] as (() => void) | undefined;
+      expect(extensionChangeHandler).toBeDefined();
+
+      vi.mocked(vscode.extensions.getExtension).mockReturnValue(undefined);
+      extensionChangeHandler?.();
+
+      deactivate();
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare).toBeUndefined();
+      expect(savedConfig.mcpServers.context7).toBeDefined();
+      expect(savedConfig._mcpflare_disabled).toBeUndefined();
+      expect(savedConfig._mcpflare_metadata).toBeUndefined();
     });
   });
 

@@ -36,6 +36,14 @@ vi.mock('vscode', () => ({
     registerCommand: vi.fn(() => ({ dispose: vi.fn() })),
     executeCommand: vi.fn().mockResolvedValue(undefined),
   },
+  extensions: {
+    getExtension: vi.fn((id: string) => ({
+      id,
+      isActive: true,
+      packageJSON: { version: 'test' },
+    })),
+    onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+  },
   env: {
     openExternal: vi.fn(),
   },

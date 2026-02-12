@@ -11,11 +11,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
-import { loadAllMCPServers } from './config-loader';
+import {
+  ensureMCPflareInConfig,
+  loadAllMCPServers,
+  removeMCPflareAndRestoreDisabledMCPsFromAllConfigs,
+} from './config-loader';
 import { resolveMCPflareServerPath } from './server-path';
 
 let webviewProvider: MCPflareWebviewProvider | undefined;
 let mcpServerProcess: ChildProcess | undefined;
+let cleanupOnDeactivate = false;
+const EXTENSION_ID = 'forgedapps.mcpflare';
 
 /**
  * Get the path to the mcpflare server
@@ -92,6 +98,23 @@ function stopMCPflareServer(): void {
 export function activate(context: vscode.ExtensionContext): void {
   console.log('MCPflare extension activated - build v2');
   console.log('MCPflare: Extension path:', context.extensionPath);
+  cleanupOnDeactivate = false;
+
+  // Ensure mcpflare is always present in IDE config on install/activation.
+  const ensureResult = ensureMCPflareInConfig(context.extensionPath);
+  if (!ensureResult.success) {
+    console.warn(`MCPflare: Failed to ensure config entry: ${ensureResult.message}`);
+  }
+
+  // Watch extension list changes so uninstall can trigger config cleanup.
+  context.subscriptions.push(
+    vscode.extensions.onDidChange(() => {
+      const installed = vscode.extensions.getExtension(EXTENSION_ID);
+      if (!installed) {
+        cleanupOnDeactivate = true;
+      }
+    }),
+  );
 
   // Spawn the mcpflare MCP server
   mcpServerProcess = spawnMCPflareServer(context);
@@ -166,7 +189,20 @@ export function activate(context: vscode.ExtensionContext): void {
  */
 export function deactivate(): void {
   console.log('MCPflare extension deactivated');
+
+  if (cleanupOnDeactivate) {
+    const result = removeMCPflareAndRestoreDisabledMCPsFromAllConfigs();
+    if (!result.success) {
+      console.warn(`MCPflare: Failed uninstall cleanup: ${result.message}`);
+    } else {
+      console.log(
+        `MCPflare: Uninstall cleanup complete (restored ${result.restoredCount} MCP${result.restoredCount === 1 ? '' : 's'})`,
+      );
+    }
+  }
+
   stopMCPflareServer();
+  cleanupOnDeactivate = false;
 }
 
 
