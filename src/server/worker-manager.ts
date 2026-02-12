@@ -99,6 +99,19 @@ export class WorkerManager {
    * Starts from the directory where this file is located, not process.cwd()
    */
   private findProjectRoot(): string {
+    const projectRootOverride = process.env.MCPFLARE_PROJECT_ROOT
+    if (
+      projectRootOverride &&
+      (existsSync(join(projectRootOverride, 'wrangler.toml')) ||
+        existsSync(join(projectRootOverride, 'package.json')))
+    ) {
+      logger.debug(
+        { projectRoot: projectRootOverride, source: 'MCPFLARE_PROJECT_ROOT' },
+        'Using project root from environment override',
+      )
+      return projectRootOverride
+    }
+
     // Get the directory where this source file is located
     // This works even when the MCP server is started from a different directory
     const currentFile = fileURLToPath(import.meta.url)

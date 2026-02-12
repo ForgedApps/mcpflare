@@ -84,6 +84,7 @@
     "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension/index.js --external:vscode --format=cjs --platform=node",
     "build:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts",
     "copy:server": "node scripts/package-server.js",
+    "smoke:packaged-server": "node scripts/smoke-test-packaged-server.js",
     "watch": "concurrently \"npm run watch:extension\" \"npm run watch:webview\"",
     "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension/index.js --external:vscode --format=cjs --platform=node --watch",
     "watch:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts --watch",

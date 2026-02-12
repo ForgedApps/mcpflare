@@ -1,10 +1,5 @@
+import { createRequire } from 'node:module'
 import pino from 'pino'
-import pinoPrettyModule from 'pino-pretty'
-
-// pino-pretty exports a function but TypeScript with Node16 module resolution
-// may not recognize the call signature correctly
-const pinoPretty =
-  pinoPrettyModule as unknown as typeof pinoPrettyModule.default
 
 // Determine log level - CLI mode is quieter by default
 // Check for CLI mode: script name includes 'cli', or CLI_MODE env var is set
@@ -33,17 +28,34 @@ const isTTY = process.stderr.isTTY === true
 let logger: pino.Logger
 
 if (isDevMode) {
-  // Use pino-pretty in dev mode, but write to stderr to avoid stdout conflicts
-  // Only enable colors if we're in a TTY (terminal), not when running as MCP server via stdio
-  logger = pino(
-    loggerConfig,
-    pinoPretty({
-      destination: process.stderr,
-      colorize: isTTY, // Only colorize if we're in a terminal
-      translateTime: 'HH:MM:ss.l',
-      ignore: 'pid,hostname',
-    }),
-  )
+  try {
+    // Load pino-pretty lazily so packaged runtimes can run without optional dev formatting deps.
+    const require = createRequire(import.meta.url)
+    const pinoPrettyModule = require('pino-pretty') as unknown
+    const pinoPretty = (
+      typeof pinoPrettyModule === 'function'
+        ? pinoPrettyModule
+        : (pinoPrettyModule as { default?: unknown }).default
+    ) as
+      | ((options: Record<string, unknown>) => NodeJS.WritableStream)
+      | undefined
+
+    if (typeof pinoPretty === 'function') {
+      logger = pino(
+        loggerConfig,
+        pinoPretty({
+          destination: process.stderr,
+          colorize: isTTY, // Only colorize if we're in a terminal
+          translateTime: 'HH:MM:ss.l',
+          ignore: 'pid,hostname',
+        }),
+      )
+    } else {
+      logger = pino(loggerConfig, process.stderr)
+    }
+  } catch {
+    logger = pino(loggerConfig, process.stderr)
+  }
 } else {
   // In production/server mode, write JSON logs to stderr
   logger = pino(loggerConfig, process.stderr)

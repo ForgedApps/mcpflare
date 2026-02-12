@@ -1,18 +1,18 @@
 /* eslint-disable no-console */
+const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
-const esbuild = require('esbuild')
 
 const extensionRoot = path.resolve(__dirname, '..')
 const repoRoot = path.resolve(extensionRoot, '..')
 
 const sourceDistDir = path.join(repoRoot, 'dist')
 const sourceWranglerConfig = path.join(repoRoot, 'wrangler.toml')
-const sourceServerEntry = path.join(repoRoot, 'src', 'server', 'index.ts')
+const rootPackageJsonPath = path.join(repoRoot, 'package.json')
 
 const packagedServerRoot = path.join(extensionRoot, 'mcpflare-server')
 const packagedDistDir = path.join(packagedServerRoot, 'dist')
-const bundledServerEntry = path.join(packagedDistDir, 'server', 'index.js')
+const packagedPackageJsonPath = path.join(packagedServerRoot, 'package.json')
 
 if (!fs.existsSync(sourceDistDir)) {
   throw new Error(
@@ -20,8 +20,8 @@ if (!fs.existsSync(sourceDistDir)) {
   )
 }
 
-if (!fs.existsSync(sourceServerEntry)) {
-  throw new Error(`Server entry file not found: ${sourceServerEntry}`)
+if (!fs.existsSync(rootPackageJsonPath)) {
+  throw new Error(`Root package.json not found: ${rootPackageJsonPath}`)
 }
 
 // Start from a clean package directory.
@@ -36,13 +36,28 @@ fs.copyFileSync(
   sourceWranglerConfig,
   path.join(packagedServerRoot, 'wrangler.toml'),
 )
+
+const rootPackageJson = JSON.parse(fs.readFileSync(rootPackageJsonPath, 'utf8'))
+const runtimeDependencyNames = [
+  '@modelcontextprotocol/sdk',
+  'dotenv',
+  'jsonc-parser',
+  'pino',
+  'pino-pretty',
+  'zod',
+]
+const packagedDependencies = Object.fromEntries(
+  runtimeDependencyNames.map((name) => [name, rootPackageJson.dependencies[name]]),
+)
+
 fs.writeFileSync(
-  path.join(packagedServerRoot, 'package.json'),
+  packagedPackageJsonPath,
   `${JSON.stringify(
     {
       name: 'mcpflare-bundled-server',
       private: true,
       type: 'module',
+      dependencies: packagedDependencies,
     },
     null,
     2,
@@ -50,16 +65,19 @@ fs.writeFileSync(
   'utf8',
 )
 
-// Bundle the server entrypoint so extension runtime does not depend on node_modules.
-esbuild.buildSync({
-  entryPoints: [sourceServerEntry],
-  outfile: bundledServerEntry,
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: ['node20'],
-  sourcemap: false,
-  legalComments: 'none',
-})
+const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const installResult = spawnSync(
+  npmCmd,
+  ['install', '--omit=dev', '--no-package-lock'],
+  {
+    cwd: packagedServerRoot,
+    stdio: 'inherit',
+  },
+)
+if (installResult.status !== 0) {
+  throw new Error(
+    `Failed to install packaged server dependencies (exit ${installResult.status})`,
+  )
+}
 
-console.log(`Packaged MCPflare server at ${bundledServerEntry}`)
+console.log(`Packaged MCPflare server at ${packagedServerRoot}`)

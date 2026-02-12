@@ -1,5 +1,6 @@
 .vscode/**
 node_modules/**
+!mcpflare-server/node_modules/**
 src/**
 tests/**
 coverage/**

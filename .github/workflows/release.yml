@@ -73,6 +73,14 @@ jobs:
         working-directory: vscode-extension
         run: npm ci
 
+      - name: Build extension package
+        working-directory: vscode-extension
+        run: npm run build:all
+
+      - name: Smoke test packaged MCP server
+        working-directory: vscode-extension
+        run: npm run smoke:packaged-server
+
       - name: Publish to VS Code Marketplace
         working-directory: vscode-extension
         run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}

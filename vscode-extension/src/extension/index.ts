@@ -8,6 +8,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
 import { loadAllMCPServers } from './config-loader';
@@ -28,6 +29,7 @@ function getMCPflareServerPath(context: vscode.ExtensionContext): string {
  */
 function spawnMCPflareServer(context: vscode.ExtensionContext): ChildProcess | undefined {
   const serverPath = getMCPflareServerPath(context);
+  const projectRoot = path.join(context.extensionPath, 'mcpflare-server');
   
   if (!fs.existsSync(serverPath)) {
     console.log(`MCPflare: Server not found at ${serverPath}, skipping spawn`);
@@ -44,6 +46,10 @@ function spawnMCPflareServer(context: vscode.ExtensionContext): ChildProcess | u
       ...process.env,
       // Ensure the server knows it's running from the extension
       MCPFLARE_FROM_EXTENSION: 'true',
+      // Ensure packaged extension runtime uses deterministic production behavior.
+      NODE_ENV: 'production',
+      // Ensure WorkerManager resolves project root without relying on import.meta.
+      MCPFLARE_PROJECT_ROOT: projectRoot,
     },
     // Don't detach - we want the process to die when VS Code closes
     detached: false,
