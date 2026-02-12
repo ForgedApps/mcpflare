@@ -7,10 +7,11 @@
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
+import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
 import { loadAllMCPServers } from './config-loader';
+import { resolveMCPflareServerPath } from './server-path';
 
 let webviewProvider: MCPflareWebviewProvider | undefined;
 let mcpServerProcess: ChildProcess | undefined;
@@ -19,17 +20,7 @@ let mcpServerProcess: ChildProcess | undefined;
  * Get the path to the mcpflare server
  */
 function getMCPflareServerPath(context: vscode.ExtensionContext): string {
-  // In development, the server is in the parent directory's dist folder
-  // In production, it will be bundled with the extension
-  const devPath = path.join(context.extensionPath, '..', 'dist', 'server', 'index.js');
-  const prodPath = path.join(context.extensionPath, 'mcpflare-server', 'index.js');
-  
-  // Check if we're in development (parent has dist folder)
-  const fs = require('fs');
-  if (fs.existsSync(devPath)) {
-    return devPath;
-  }
-  return prodPath;
+  return resolveMCPflareServerPath(context.extensionPath);
 }
 
 /**
@@ -37,7 +28,6 @@ function getMCPflareServerPath(context: vscode.ExtensionContext): string {
  */
 function spawnMCPflareServer(context: vscode.ExtensionContext): ChildProcess | undefined {
   const serverPath = getMCPflareServerPath(context);
-  const fs = require('fs');
   
   if (!fs.existsSync(serverPath)) {
     console.log(`MCPflare: Server not found at ${serverPath}, skipping spawn`);

@@ -135,6 +135,39 @@ describe('extension/index', () => {
       expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalled();
     });
 
+    it('should spawn bundled server path for marketplace installs', () => {
+      const logSpy = vi.spyOn(console, 'log');
+      const bundledServerPath = path.join(
+        '/mock/extension',
+        'mcpflare-server',
+        'dist',
+        'server',
+        'index.js',
+      );
+      addMockFile(bundledServerPath, 'console.log("server")');
+
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+
+      expect(logSpy).toHaveBeenCalledWith(
+        `MCPflare: Spawning server from ${bundledServerPath}`,
+      );
+    });
+
+    it('should not spawn server when bundled path is missing', () => {
+      const logSpy = vi.spyOn(console, 'log');
+      activate(mockContext as unknown as import('vscode').ExtensionContext);
+      const bundledServerPath = path.join(
+        '/mock/extension',
+        'mcpflare-server',
+        'dist',
+        'server',
+        'index.js',
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        `MCPflare: Server not found at ${bundledServerPath}, skipping spawn`,
+      );
+    });
+
     describe('command handlers', () => {
       it('openSettings command should execute workbench view command', () => {
         activate(mockContext as unknown as import('vscode').ExtensionContext);
