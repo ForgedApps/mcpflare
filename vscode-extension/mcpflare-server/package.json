@@ -1,0 +1,5 @@
+{
+  "name": "mcpflare-bundled-server",
+  "private": true,
+  "type": "module"
+}

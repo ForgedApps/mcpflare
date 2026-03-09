@@ -1,0 +1,7 @@
+name = "mcpflare"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["enable_ctx_exports"]
+
+[[worker_loaders]]
+binding = "LOADER"
+
