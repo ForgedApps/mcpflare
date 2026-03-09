@@ -15,9 +15,20 @@ if (!fs.existsSync(targetMediaDir)) {
 }
 
 // Copy screenshot from assets to media directory
-if (fs.existsSync(sourceScreenshot)) {
-  fs.copyFileSync(sourceScreenshot, targetScreenshot)
-  console.log(`✅ Copied screenshot: ${sourceScreenshot} → ${targetScreenshot}`)
-} else {
-  console.warn(`⚠️  Source screenshot not found: ${sourceScreenshot}`)
+if (!fs.existsSync(sourceScreenshot)) {
+  console.error(
+    `❌ Error: Source screenshot not found: ${sourceScreenshot}`,
+  )
+  console.error(
+    `   Expected location: ${path.relative(process.cwd(), sourceScreenshot)}`,
+  )
+  console.error(
+    '   The screenshot must exist in the assets/ directory at the repository root.',
+  )
+  process.exit(1)
 }
+
+fs.copyFileSync(sourceScreenshot, targetScreenshot)
+console.log(
+  `✅ Copied screenshot: ${path.relative(process.cwd(), sourceScreenshot)} → ${path.relative(process.cwd(), targetScreenshot)}`,
+)
