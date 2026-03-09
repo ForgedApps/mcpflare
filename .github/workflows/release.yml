@@ -58,7 +58,6 @@ jobs:
 
       - name: Validate version
         run: node scripts/validate-version.js
-        description: Ensures the version being published is higher than what's already on npm
 
       - name: Publish to npm
         run: npm publish --provenance --access public
