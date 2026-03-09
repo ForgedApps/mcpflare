@@ -50,17 +50,41 @@ try {
     process.exit(0)
   }
 
-  // Compare versions using semver
+  // Compare versions using semver-compliant comparison
+  // Handles pre-release versions (e.g., 1.3.4-beta.1) correctly
   const compareVersions = (v1, v2) => {
-    const parts1 = v1.split('.').map(Number)
-    const parts2 = v2.split('.').map(Number)
+    // Extract base version (remove pre-release identifiers for numeric comparison)
+    const parseVersion = (version) => {
+      // Split on '-' to separate base version from pre-release
+      const [base, ...prerelease] = version.split('-')
+      const parts = base.split('.').map((p) => {
+        const num = Number(p)
+        return Number.isNaN(num) ? 0 : num
+      })
+      return { parts, prerelease: prerelease.join('-') }
+    }
 
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-      const p1 = parts1[i] || 0
-      const p2 = parts2[i] || 0
+    const v1Parsed = parseVersion(v1)
+    const v2Parsed = parseVersion(v2)
+
+    // Compare numeric parts
+    const maxLength = Math.max(v1Parsed.parts.length, v2Parsed.parts.length)
+    for (let i = 0; i < maxLength; i++) {
+      const p1 = v1Parsed.parts[i] || 0
+      const p2 = v2Parsed.parts[i] || 0
       if (p1 > p2) return 1
       if (p1 < p2) return -1
     }
+
+    // If base versions are equal, compare pre-release identifiers
+    // Versions without pre-release are considered greater than pre-release versions
+    if (v1Parsed.prerelease && !v2Parsed.prerelease) return -1
+    if (!v1Parsed.prerelease && v2Parsed.prerelease) return 1
+    if (v1Parsed.prerelease && v2Parsed.prerelease) {
+      // Compare pre-release strings lexicographically
+      return v1Parsed.prerelease.localeCompare(v2Parsed.prerelease)
+    }
+
     return 0
   }
 
