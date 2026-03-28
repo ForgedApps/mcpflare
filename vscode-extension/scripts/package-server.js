@@ -57,9 +57,14 @@ esbuild.buildSync({
   bundle: true,
   platform: 'node',
   format: 'esm',
+  mainFields: ['module', 'main'],
+  conditions: ['import', 'module', 'default'],
   target: ['node20'],
   sourcemap: false,
   legalComments: 'none',
+  banner: {
+    js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  },
 })
 
 console.log(`Packaged MCPflare server at ${bundledServerEntry}`)

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import dotenv from 'dotenv'
+import { loadEnvFromDotFile } from '../utils/load-env.js'
 import logger from '../utils/logger.js'
 import { MCPHandler } from './mcp-handler.js'
 
-// Load environment variables
-dotenv.config()
+// Load environment variables from .env when present.
+loadEnvFromDotFile()
 
 async function main() {
   try {

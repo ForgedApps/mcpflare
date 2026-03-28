@@ -76,6 +76,10 @@ jobs:
         working-directory: vscode-extension
         run: npm ci
 
+      - name: Verify packaged extension server startup
+        working-directory: vscode-extension
+        run: npm run build:all && npm run verify:packaged-server
+
       - name: Publish to VS Code Marketplace
         working-directory: vscode-extension
         run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}

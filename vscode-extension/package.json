@@ -77,9 +77,10 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build:all",
+    "vscode:prepublish": "npm run build:all && npm run verify:packaged-server",
     "build": "npm run build:extension && npm run build:webview",
     "build:all": "npm run build:server && npm run build:extension && npm run build:webview && npm run copy:server && npm run copy:assets",
+    "verify:packaged-server": "node scripts/verify-packaged-server.js",
     "build:server": "cd .. && npm run build",
     "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension/index.js --external:vscode --format=cjs --platform=node",
     "build:webview": "esbuild src/webview/index.tsx --bundle --outfile=dist/webview/index.js --format=iife --loader:.tsx=tsx --loader:.ts=ts",
