@@ -482,6 +482,37 @@ describe('config-loader', () => {
       expect(result.message).toContain('already in config');
     });
 
+    it('should update mcpflare path when existing entry points to old extension version', () => {
+      const cursorPath = getTestConfigPath('cursor');
+      const staleServerPath = path.join(
+        '/fake/old-extension/path',
+        'mcpflare-server',
+        'dist',
+        'server',
+        'index.js',
+      );
+      const expectedServerPath = path.join(
+        '/fake/new-extension/path',
+        'mcpflare-server',
+        'dist',
+        'server',
+        'index.js',
+      );
+
+      addMockFile(cursorPath, createSampleMCPConfig({
+        mcpflare: { command: 'node', args: [staleServerPath] },
+      }));
+
+      const result = ensureMCPflareInConfig('/fake/new-extension/path');
+
+      expect(result.success).toBe(true);
+      expect(result.added).toBe(false);
+      expect(result.message).toContain('Updated mcpflare config');
+
+      const savedConfig = JSON.parse(getMockFileContent(cursorPath)!);
+      expect(savedConfig.mcpServers.mcpflare.args[0]).toBe(expectedServerPath);
+    });
+
     it('should restore mcpflare from disabled section', () => {
       const cursorPath = getTestConfigPath('cursor');
       addMockFile(cursorPath, createSampleMCPConfig(

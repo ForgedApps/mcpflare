@@ -768,11 +768,43 @@ export function ensureMCPflareInConfig(extensionPath: string): {
     }
   }
 
-  // Check if mcpflare already exists
+  // Check if mcpflare already exists and ensure it points at this extension build.
   if (rawConfig.mcpServers['mcpflare']) {
+    const currentConfig = rawConfig.mcpServers['mcpflare']
+    const currentCommand = currentConfig.command
+    const currentArgs = currentConfig.args
+    const desiredArgs = desiredConfig.args
+    const needsUpdate =
+      currentCommand !== desiredConfig.command ||
+      !Array.isArray(currentArgs) ||
+      !Array.isArray(desiredArgs) ||
+      currentArgs.length !== desiredArgs.length ||
+      currentArgs[0] !== desiredArgs[0]
+
+    if (!needsUpdate) {
+      return {
+        success: true,
+        message: 'mcpflare already in config',
+        added: false,
+      }
+    }
+
+    rawConfig.mcpServers['mcpflare'] = buildMCPflareConfig(
+      extensionPath,
+      currentConfig,
+    )
+    if (!writeConfigFile(configPath, rawConfig)) {
+      return {
+        success: false,
+        message: 'Failed to write config file',
+        added: false,
+      }
+    }
+
+    console.log('MCPflare: Updated mcpflare config to current bundled server path')
     return {
       success: true,
-      message: 'mcpflare already in config',
+      message: 'Updated mcpflare config to current extension path',
       added: false,
     }
   }

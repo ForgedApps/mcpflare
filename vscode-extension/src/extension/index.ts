@@ -8,9 +8,10 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import { MCPflareWebviewProvider } from './webview-provider';
-import { loadAllMCPServers } from './config-loader';
+import { ensureMCPflareInConfig, loadAllMCPServers } from './config-loader';
 import { resolveMCPflareServerPath } from './server-path';
 
 let webviewProvider: MCPflareWebviewProvider | undefined;
@@ -86,6 +87,15 @@ function stopMCPflareServer(): void {
 export function activate(context: vscode.ExtensionContext): void {
   console.log('MCPflare extension activated - build v2');
   console.log('MCPflare: Extension path:', context.extensionPath);
+
+  // Keep IDE config in sync with the currently installed extension path.
+  // This repairs stale entries after extension upgrades/reinstalls.
+  const ensureResult = ensureMCPflareInConfig(context.extensionPath);
+  if (!ensureResult.success) {
+    console.warn(
+      `MCPflare: Failed to ensure mcpflare MCP entry in IDE config: ${ensureResult.message}`,
+    );
+  }
 
   // Spawn the mcpflare MCP server
   mcpServerProcess = spawnMCPflareServer(context);

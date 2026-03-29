@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-03-28
+
+### Fixed
+- Ensured extension activation always reconciles the `mcpflare` MCP entry in IDE config so reinstall/upgrade repairs missing entries automatically.
+- Updated `ensureMCPflareInConfig` to rewrite stale `mcpflare` server paths from older extension versions instead of treating them as already valid.
+
 ## [1.3.6] - 2026-03-28
 
 ### Fixed
