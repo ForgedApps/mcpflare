@@ -202,3 +202,31 @@ Add to your IDE's MCP config:
 - Pino for structured logging (no `console.log` in non-CLI code)
 - Zod for runtime validation
 - Async/await preferred, custom error types at boundaries
+
+## Cursor Cloud specific instructions
+
+### Services overview
+
+MCPflare has three components: the core MCP server (`src/`), a VSCode extension (`vscode-extension/`), and a docs site (`docs-site/`). The core server is the primary development target. All build/dev/test commands are documented in the "Build and Development Commands" section above.
+
+### Running the MCP server
+
+- `npm run dev` starts the MCP server over stdio (via `tsx`). It reads IDE MCP config from `~/.cursor/mcp.jsonc` in this environment. The process blocks on stdin; it exits cleanly on EOF/SIGTERM.
+- `npm run cli` starts the interactive CLI. Pipe commands via stdin for non-interactive use: `echo -e "status\nexit" | npx tsx src/cli/index.ts`.
+
+### Testing notes
+
+- `npm test` runs all Vitest suites (unit, integration, security, evals). Expect 490+ passing tests.
+- The `tests/evals/github-mcp-isolation.test.ts` test requires a `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` **and** a GitHub MCP entry in the IDE config; it will fail in CI/cloud environments without these. This is expected.
+- Security tests (`tests/security/mcp-isolation.test.ts`, `tests/security/network-allowlist.test.ts`) spawn real Wrangler/workerd processes and take ~50-75s each. They are the slowest tests in the suite.
+- Use `npm run test:unit` for fast iteration (~1s); use `npm run test:security` only when changing isolation/network code.
+
+### Lint
+
+- Pre-commit hook runs `npm run check` (Biome lint + format). Pre-push hook additionally runs full `npm test`.
+- In cloud environments, run `npm run check` before committing to match CI expectations.
+
+### VSCode extension
+
+- Has its own `package.json` and `package-lock.json` at `vscode-extension/`. Install deps separately with `cd vscode-extension && npm install`.
+- Extension tests run as part of the main `npm test` suite (vitest picks up `vscode-extension/tests/`).
